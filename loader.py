@@ -1,36 +1,20 @@
 import glob
-import logging
-import math
 import os
-import random
-import shutil
 import time
-from itertools import repeat
-from multiprocessing.pool import ThreadPool
 from pathlib import Path
 from threading import Thread
+from multiprocessing import shared_memory, Process, Barrier, Lock
 
 import cv2
 import numpy as np
-import torch
-import torch.nn.functional as F
-from PIL import Image, ExifTags
-from torch.utils.data import Dataset
-from tqdm import tqdm
 import h5py
-
-import pickle
 from copy import deepcopy
-#from pycocotools import mask as maskUtils
-from torchvision.utils import save_image
-from torchvision.ops import roi_pool, roi_align, ps_roi_pool, ps_roi_align
 
-from yolov7.utils.general import check_requirements, xyxy2xywh, xywh2xyxy, xywhn2xyxy, xyn2xy, segment2box, segments2boxes, \
-    resample_segments, clean_str
-from yolov7.utils.torch_utils import torch_distributed_zero_first
+from yolov7.utils.general import check_requirements, clean_str
 from yolov7.utils.datasets import letterbox
 
-from save_video import D2RGB, RGB2D
+from EtherSense.EtherSenseClient import multi_cast_message, D2RGB, RGB2D
+
 
 # Parameters
 img_formats = ['bmp', 'jpg', 'jpeg', 'png', 'tif', 'tiff', 'dng', 'webp', 'mpo']  # acceptable image suffixes
@@ -145,59 +129,49 @@ class LoadImages:  # for inference
 
 
 class LoadWebcam:  # for inference
-    def __init__(self, pipe='0', img_size=640, stride=32):
+    def __init__(self, num_servers : int, img_size=640, stride=32):
         self.img_size = img_size
         self.stride = stride
+        self.cap = None
 
-        if pipe.isnumeric():
-            pipe = eval(pipe)  # local camera
-        # pipe = 'rtsp://192.168.1.64/1'  # IP camera
-        # pipe = 'rtsp://username:password@192.168.1.64/1'  # IP camera with login
-        # pipe = 'http://wmccpinetop.axiscam.net/mjpg/video.mjpg'  # IP golf camera
-
-        self.pipe = pipe
-        self.cap = cv2.VideoCapture(pipe)  # video capture object
-        self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 3)  # set buffer size
+        a = np.ones((num_servers, 480, 640), dtype=np.float16)
+        shm = shared_memory.SharedMemory(create=True, size=a.nbytes)
+        self.depth = np.ndarray(a.shape, dtype=np.float16, buffer=shm.buf)
+        self.barrier = Barrier(num_servers+1)
+        self.lock = Lock()
+        process = Process(target=multi_cast_message, args=("EtherSense ping", self.barrier, self.depth))
+        process.start()
 
     def __iter__(self):
-        self.count = -1
+        self.count = 0
         return self
 
     def __next__(self):
-        self.count += 1
-        if cv2.waitKey(1) == ord('q'):  # q to quit
-            self.cap.release()
-            cv2.destroyAllWindows()
-            raise StopIteration
 
-        # Read frame
-        if self.pipe == 0:  # local camera
-            ret_val, img0 = self.cap.read()
-            img0 = cv2.flip(img0, 1)  # flip left-right
-        else:  # IP camera
-            n = 0
-            while True:
-                n += 1
-                self.cap.grab()
-                if n % 30 == 0:  # skip frames
-                    ret_val, img0 = self.cap.retrieve()
-                    if ret_val:
-                        break
-
-        # Print
-        assert ret_val, f'Camera Error {self.pipe}'
-        img_path = 'webcam.jpg'
-        print(f'webcam {self.count}: ', end='')
+        path = None
+        box = None
+        keypoints = None
+        self.barrier.wait()
+        with self.lock:
+            depth = self.depth.copy()
+        img0 = D2RGB(depth)
 
         # Padded resize
         img = letterbox(img0, self.img_size, stride=self.stride)[0]
 
         # Convert
-        img = img[:, :, ::-1].transpose(2, 0, 1)  # BGR to RGB, to 3x416x416
+        img = img[np.newaxis, :, :, ::-1].transpose(0, 3, 1, 2) # BGR to RGB, to 1x3x416x416
         img = np.ascontiguousarray(img)
 
-        return img_path, img, img0, None
+        img0 = img0[np.newaxis, ...]
+        depth = depth[np.newaxis, ...]
+        box = box[np.newaxis, ...]
+        keypoints = keypoints[np.newaxis, ...]
 
+        self.count += 1
+
+        return path, img, img0, depth, box, keypoints, self.cap
+        
     def __len__(self):
         return 0
 
