@@ -1,5 +1,4 @@
 #!/usr/bin/python
-import pyrealsense2 as rs
 import sys
 import asyncore
 import numpy as np
@@ -9,7 +8,7 @@ import struct
 import cv2
 
 mc_ip_address = '224.0.0.1'
-depth_scale = 0.0010000000474974513
+
 port = 1024
 chunk_size = 4096
 
@@ -40,12 +39,7 @@ def RGB2D(depth_map):
 
     return d
 
-def D2RGB(depth_map):
-    # Convert depth map to float type
-    d = depth_map.astype(np.float)
-
-    # Initialize empty RGB image
-    rgb = np.zeros((d.shape[0], d.shape[1], 3), dtype=np.uint8)
+def D2RGB(d):
 
     # Compute RGB channels from depth map
     r = np.zeros_like(d)
@@ -84,24 +78,22 @@ def D2RGB(depth_map):
     b[condition] = (1529 - d_normal)[condition]
 
     # Set RGB channels to RGB image
-    rgb[:,:,0] = r
-    rgb[:,:,1] = g
-    rgb[:,:,2] = b
+    rgb = np.stack([r,g,b], axis=-1).astype(np.uint8)
 
     return rgb
 
 
 #UDP client for each camera server 
 class ImageClient(asyncore.dispatcher):
-    def __init__(self, server, source, server_id):
+    def __init__(self, server, source, lock, queue):
         asyncore.dispatcher.__init__(self, server)
+        self.lock = lock
+        self.queue = queue
         self.buffer = bytearray()
         self.windowName = source[1]
         # open cv window which is unique to the port 
-        cv2.namedWindow("window"+str(self.windowName))
         self.remainingBytes = 0
 
-        self._server_id = server_id
        
     def handle_read(self):
         if self.remainingBytes == 0:
@@ -122,24 +114,29 @@ class ImageClient(asyncore.dispatcher):
 
         # convert the frame from string to numerical data
         imdata = pickle.loads(self.buffer)
-        bigDepth = cv2.resize(imdata, (0,0), fx=2, fy=2, interpolation=cv2.INTER_NEAREST)
-        bigDepth = D2RGB(bigDepth * depth_scale)
-        cv2.imshow("window"+str(self.windowName), cv2.cvtColor(bigDepth, cv2.COLOR_RGB2BGR))
-        cv2.waitKey(1)
+        # bigDepth = D2RGB(imdata)
+        # bigDepth = cv2.resize(bigDepth, (0,0), fx=2, fy=2, interpolation=cv2.INTER_NEAREST)
+        
+        # cv2.imshow("window"+str(self.windowName), cv2.cvtColor(bigDepth, cv2.COLOR_RGB2BGR))
+        # cv2.waitKey(1)
         self.buffer = bytearray()
 
-        memory[self._server_id] = imdata
-        # Wait for all threads to reach the barrier
-        barrier.wait()
 
+        with self.lock:
+            if not self.queue.full():
+                self.queue.put(imdata)
+        
     def readable(self):
         return True
 
     
 class EtherSenseClient(asyncore.dispatcher):
-    def __init__(self):
+    def __init__(self, num_servers, lock, queue):
         asyncore.dispatcher.__init__(self)
-        self.num_servers = 0
+        self.num_servers = num_servers
+        self.lock = lock
+        self.queue = queue
+        self.server_id = 0
         self.server_address = ('', port)
         # create a socket for TCP connection between the client and server
         self.create_socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -160,17 +157,16 @@ class EtherSenseClient(asyncore.dispatcher):
     def handle_accepted(self, sock, addr):
         if sock is not None:
             print ('Incoming connection from %s' % repr(addr))
-            if self.num_servers < barrier.parties:
-                handler = ImageClient(sock, addr, self.num_servers)
-                self.num_servers += 1
+            if self.server_id < self.num_servers:
+                handler = ImageClient(sock, addr, self.lock, self.queue[self.server_id])
+                self.server_id += 1
                 # when a connection is attempted, delegate image receival to the ImageClient
                 
             else:
                 print(f"Server {addr} cannot be handled")
 
-def multi_cast_message(message, shared_barrier, shared_memory):
-    global barrier, memory
-    barrier, memory = shared_barrier, shared_memory
+
+def multi_cast_message(message, num_servers, shared_lock, shared_queue):
 
     # send the multicast message
     multicast_group = (mc_ip_address, port)
@@ -179,11 +175,11 @@ def multi_cast_message(message, shared_barrier, shared_memory):
     sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 2)
     
     try:
-        client = EtherSenseClient(barrier)
+        client = EtherSenseClient(num_servers, shared_lock, shared_queue)
         # Send data to the multicast group
         print('sending "%s"' % message + str(multicast_group))
         sock.sendto(message.encode(), multicast_group)
-   
+    
         # defer waiting for a response using Asyncore
         
         asyncore.loop()

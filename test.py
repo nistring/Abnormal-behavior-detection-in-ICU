@@ -11,6 +11,7 @@ import numpy as np
 import yaml
 import json
 import sys
+import paramiko
 
 root = os.path.abspath(os.path.dirname(__file__))
 res_dir = os.path.join(root, "res")
@@ -43,8 +44,7 @@ from yolov7.utils.torch_utils import (
 import A2J.src.model
 from A2J.src.dataloader import build_test_dataloader
 
-from loader import LoadStreams, LoadImages, LoadWebcam
-from save_video import D2RGB
+from loader import LoadImages, LoadWebcam
 
 source_dict = {"blue": "", "yellow": "", "orange": ""}
 
@@ -53,8 +53,8 @@ def resize_keypoints(keypoints, box, input_size):
     return keypoints * (box[2:] - box[:2]) / input_size + box[:2]
 
 
-def plot_skeleton(frame, keypoints, linewidth=2):
-    color = (0,0,0)
+def plot_skeleton(frame, keypoints, linewidth=3):
+    color = (255, 255, 255)
     p = keypoints.numpy().astype(np.int16)
     cv2.line(
         frame,
@@ -119,6 +119,9 @@ def test(save_img=False):
     if webcam:
         cudnn.benchmark = True  # set True to speed up constant image size inference
         dataset = LoadWebcam(webcam, img_size=imgsz, stride=stride)
+        for i in range(webcam):
+            cv2.namedWindow(str(i))
+
     elif source:
         dataset = LoadImages(source, annotations, img_size=imgsz, stride=stride)
     else:
@@ -128,7 +131,7 @@ def test(save_img=False):
     save_dir = Path(increment_path(Path(opt.project) / opt.name, exist_ok=opt.exist_ok))  # increment run
     if save_img:
         if webcam:
-            for w in webcam:
+            for w in range(webcam):
                 (save_dir / "images" / w).mkdir(parents=True, exist_ok=True)  # make dir
         else:
             (save_dir / "images").mkdir(parents=True, exist_ok=True)  # make dir
@@ -188,7 +191,7 @@ def test(save_img=False):
                 boxes.append(int_xyxy)
                 cropped_img.append(
                     cv2.resize(
-                        depth[i, int_xyxy[1] : int_xyxy[3], int_xyxy[0] : int_xyxy[2]],
+                        depth[i, max(int_xyxy[1], 0) : min(int_xyxy[3], 480), max(int_xyxy[0], 0) : min(int_xyxy[2], 640)],
                         (input_size, input_size),
                     )
                 )
@@ -199,7 +202,7 @@ def test(save_img=False):
 
             # Pose estimation
             dt_keypoints = net(cropped_img).cpu()
-            
+
             kp_idx = 0
         t4 = time_synchronized()
         # Process detections
@@ -265,25 +268,33 @@ def test(save_img=False):
                         color=colors[int(cls)],
                         line_thickness=1,
                     )
-                    plot_skeleton(depth_map[i], dt_keypoint)#torch.Tensor(gt_keypoint))
+                    plot_skeleton(depth_map[i], dt_keypoint)  # torch.Tensor(gt_keypoint))
 
                 kp_idx += 1
 
             # Print time (inference + NMS)
-            print(
-                f"({(1E3 * (t2 - t1)):.1f}ms) Detection, ({(1E3 * (t3 - t2)):.1f}ms) NMS, ({(1E3 * (t4 - t3)):.1f}ms) Pose Estimation"
-            )
+            print(f"({(1E3 * (t2 - t1)):.1f}ms) Detection, ({(1E3 * (t3 - t2)):.1f}ms) NMS, ({(1E3 * (t4 - t3)):.1f}ms) Pose Estimation")
 
             # Stream results
             if view_img:
-                cv2.imshow(webcam[i] if webcam else str(i), depth_map[i])
+                for i in range(webcam):
+                    bigDepth = cv2.resize(depth_map[i], (0,0), fx=2, fy=2, interpolation=cv2.INTER_NEAREST)
+                    cv2.imshow(str(i), cv2.cvtColor(bigDepth, cv2.COLOR_RGB2BGR))
+                    cv2.waitKey(1)
 
             # Save results (image with detections)
             if save_img:
-                cv2.imwrite(
-                    os.path.join(save_dir, "images", webcam[i], (path.stem + '.jpg')) if webcam else os.path.join(save_dir, "images", (path.stem + '.jpg')),
-                    depth_map[i],
-                )
+                if webcam:
+                    for i in range(webcam):
+                        cv2.imwrite(
+                            os.path.join(save_dir, "images", i, (path.stem + ".jpg")),
+                            depth_map[i],
+                        )
+                else:
+                    cv2.imwrite(
+                        os.path.join(save_dir, "images", (path.stem + ".jpg")),
+                        depth_map[i],
+                    )
                 print(f" The image with the result is saved in: {save_dir}")
 
     # Save JSON
@@ -317,6 +328,17 @@ def test(save_img=False):
 
 
 if __name__ == "__main__":
+    # server = ['192.168.0.4', '192.168.0.6', '192.168.0.7']
+    # client = []
+    # for i in range(3):
+    #     cli = paramiko.SSHClient()
+    #     cli.set_missing_host_key_policy(paramiko.AutoAddPolicy)
+    #     ser = server[i]
+    #     cli.connect(ser, port=22, username='cnu_r', password='esnesla6792')
+    #     cli.exec_command('conda activate base')
+    #     stdin, stdout, stderr = cli.exec_command('python /Users/cnu_r/OneDrive/Desktop/EtherSense/EtherSenseServer.py')
+    #     client.append(cli)
+    # try:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--dt_weights",
@@ -332,7 +354,7 @@ if __name__ == "__main__":
         help="pose estimation model.pt path(s)",
     )
     parser.add_argument("--source", type=str, help="source")
-    parser.add_argument("--webcam", nargs="+", type=str, help="input camera numbers")
+    parser.add_argument("--webcam", type=int, help="input camera numbers")
     parser.add_argument("--img-size", type=int, default=640, help="inference size (pixels)")
     parser.add_argument("--conf-thres", type=float, default=0.25, help="object confidence threshold")
     parser.add_argument("--iou-thres", type=float, default=0.45, help="IOU threshold for NMS")
@@ -366,3 +388,6 @@ if __name__ == "__main__":
     # check_requirements(exclude=('pycocotools', 'thop'))
     with torch.no_grad():
         test()
+
+        # for c in client:
+        #     c.close()

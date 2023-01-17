@@ -3,7 +3,7 @@ import os
 import time
 from pathlib import Path
 from threading import Thread
-from multiprocessing import shared_memory, Process, Barrier, Lock
+import multiprocessing as mp
 
 import cv2
 import numpy as np
@@ -133,14 +133,13 @@ class LoadWebcam:  # for inference
         self.img_size = img_size
         self.stride = stride
         self.cap = None
+        self.num_servers = num_servers
 
-        a = np.ones((num_servers, 480, 640), dtype=np.float16)
-        shm = shared_memory.SharedMemory(create=True, size=a.nbytes)
-        self.depth = np.ndarray(a.shape, dtype=np.float16, buffer=shm.buf)
-        self.barrier = Barrier(num_servers+1)
-        self.lock = Lock()
-        process = Process(target=multi_cast_message, args=("EtherSense ping", self.barrier, self.depth))
+        self.queues = [mp.Queue(maxsize=3) for _ in range(num_servers)]
+        self.lock = mp.Lock()
+        process = mp.Process(target=multi_cast_message, args=("EtherSense ping", num_servers, self.lock, self.queues))
         process.start()
+        time.sleep(5)
 
     def __iter__(self):
         self.count = 0
@@ -148,25 +147,25 @@ class LoadWebcam:  # for inference
 
     def __next__(self):
 
-        path = None
+        path = str(self.count)
         box = None
         keypoints = None
-        self.barrier.wait()
-        with self.lock:
-            depth = self.depth.copy()
+
+        while True:
+            with self.lock:
+                if all([not queue.empty() for queue in self.queues]):
+                    depth = np.stack([queue.get() for queue in self.queues], axis=0)
+                    break
+            time.sleep(0.01)
+
         img0 = D2RGB(depth)
 
         # Padded resize
-        img = letterbox(img0, self.img_size, stride=self.stride)[0]
+        img = np.stack([letterbox(img0[i], self.img_size, stride=self.stride)[0] for i in range(self.num_servers)])
 
         # Convert
-        img = img[np.newaxis, :, :, ::-1].transpose(0, 3, 1, 2) # BGR to RGB, to 1x3x416x416
+        img = img[:, :, :, ::-1].transpose(0, 3, 1, 2) # BGR to RGB, to 1x3x416x416
         img = np.ascontiguousarray(img)
-
-        img0 = img0[np.newaxis, ...]
-        depth = depth[np.newaxis, ...]
-        box = box[np.newaxis, ...]
-        keypoints = keypoints[np.newaxis, ...]
 
         self.count += 1
 

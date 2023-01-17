@@ -123,7 +123,7 @@ def training_video():
             depth_frame = disparity_to_depth.process(depth_frame)
             
             depth_data = np.asanyarray(depth_frame.get_data()) * depth_scale
-            depth_data = np.clip(depth_data, min_distance, max_distance).astype(np.float32)
+            depth_data = np.clip(depth_data, min_distance, max_distance).astype(np.float16)
             depth_map = ((depth_data-min_distance) * (255 / (max_distance-min_distance)))
             depth_map = np.clip(depth_map, 0, 255).astype(np.uint8)
             depth_map = np.stack([depth_map, depth_map, depth_map], axis=-1)

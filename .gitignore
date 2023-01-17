@@ -2,3 +2,4 @@ datasets/
 ICU_data/
 runs/
 archive/
+*.pt

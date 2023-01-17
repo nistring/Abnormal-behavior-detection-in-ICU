@@ -53,7 +53,9 @@ class EtherSenseServer(asyncore.dispatcher):
 
         self.frame_data = ''
         self.connect(client_address)
-        self.packet_id = 0        
+        self.packet_id = 0
+
+        self._open_video_writer()
 
     def handle_connect(self):
         print("connection received")
@@ -102,9 +104,9 @@ class EtherSenseServer(asyncore.dispatcher):
     def _open_pipeline(self):
         self.cfg = rs.config()
         self.cfg.enable_stream(rs.stream.depth, width, height, rs.format.z16, FPS)
-        self.cfg.enable_stream(rs.stream.depth, width, height, rs.format.bgr8, FPS)
+        self.cfg.enable_stream(rs.stream.color, width, height, rs.format.bgr8, FPS)
         self.pipeline = rs.pipeline()
-        self.pipeline_profile = self.pipeline.start(self.cfg)
+        pipeline_profile = self.pipeline.start(self.cfg)
 
         align_to = rs.stream.color
         self.align = rs.align(align_to)
@@ -127,8 +129,8 @@ class EtherSenseServer(asyncore.dispatcher):
             depth = self.disparity_to_depth.process(depth)
             # original_depth = np.clip(np.asanyarray(depth.get_data()) * depth_scale, min_distance, max_distance)
             depth_map = self.color_filter.process(depth)
-            
-            depth = np.asanyarray(depth.get_data())
+            depth = np.asanyarray(depth.get_data(), dtype=np.float32) * depth_scale
+            depth = np.clip(depth, min_distance, max_distance)
             depth_map = np.asanyarray(depth_map.get_data())
 
             return depth, depth_map
