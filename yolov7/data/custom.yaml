@@ -1,0 +1,13 @@
+# COCO 2017 dataset http://cocodataset.org
+
+
+# train and val data as 1) directory: path/images/, 2) file: path/images.txt, or 3) list: [path1/images/, path2/images/]
+train: /home/ubuntu/workspace/@ICU/datasets/train/yolo/autosplit_train.txt  # 118287 images
+val: /home/ubuntu/workspace/@ICU/datasets/train/yolo/autosplit_val.txt   # 5000 images
+test: /home/ubuntu/workspace/@ICU/datasets/test/yolo  # 20288 of 40670 images, submit to https://competitions.codalab.org/competitions/20794
+
+# number of classes
+nc: 1
+
+# class names
+names: [ 'person']
