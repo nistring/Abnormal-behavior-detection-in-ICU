@@ -1,1 +1,0 @@
-python train.py --workers 12 --batch-size 128 --data data/custom.yaml --cfg cfg/training/yolov7-tiny.yaml --weights yolov7-tiny --name yolov7-tiny --hyp hyp.scratch.tiny.yaml --epochs 50

@@ -313,34 +313,5 @@ def D2RGB(depth_map):
 
     return rgb
 
-
-# unsigned short RGBtoD(unsigned char r, unsigned char g, unsigned char b)
-# {
-#     // conversion from RGB color to quantized depth value
-#     if (b + g + r < 255)
-#     {
-#         return 0;
-#     }
-#     else if (r >= g && r >= b)
-#     {
-#         if (g >= b)
-#         {   
-#             return g - b;
-#         }
-#         else
-#         {
-#             return (g - b) + 1529;
-#         }
-#     }
-#     else if (g >= r && g >= b)
-#     {
-#         return b - r + 510;
-#     }
-#     else if (b >= g && b >= r)
-# {
-#         return r - g + 1020;
-#     }
-# }
-
 if __name__ == '__main__':
     test_video()

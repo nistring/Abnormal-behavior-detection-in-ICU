@@ -46,8 +46,75 @@ from A2J.src.dataloader import build_test_dataloader
 
 from loader import LoadImages, LoadWebcam
 
-source_dict = {"blue": "", "yellow": "", "orange": ""}
 
+def make_coco_dataset():
+    skeleton = [
+        [0,0],[1,2],[1,3],[2,4],[3,5],[4,6],[7,8],[2,8],[1,7]
+    ]
+
+    coco = {
+
+        "info": {
+            "description": "",
+            "url": "http://bilab.ai/",
+            "version": "1.0",
+            "year": 2022,
+            "contributor": "",
+            "data_created": "2022/07/09"
+        },
+
+        "licenses": [
+            # For example
+            {
+            "url": "http://creativecommons.org/licenses/by-nc-sa/2.0/",
+            "id": 1,
+            "name": "Attribution-NonCommercial-ShareAlike License"
+            }
+        ],
+
+        "images": [
+            # ***Format***
+            # {
+            #     "license": 1,
+            #     "file_name": "000000397133.jpg",
+            #     "height": 480,
+            #     "width": 640,
+            #     "date_captured": "2020-08-31T12:43:47.223Z"
+            #     "flickr_url": None,
+            #     "classId": 1496904
+            #     "id": 506412614
+        ],
+
+        "categories": [
+            {
+                "supercategory": "person",
+                "id": 0,
+                "name": "patient",
+                "keypoints": [
+                    "Nose", "Left Shoulder", "Right Shoulder", "Left Elbow", "Right Elbow",
+                    "Left Wrist", "Right Wrist", "Left Hip", "Right Hip",
+                ],
+                "skeleton": skeleton
+            }
+        ],
+
+        "annotations": [
+            # ***Format***
+            # {
+            #     "segmentation": None,
+            #     "num_keypoints": 29,
+            #     "area": None,
+            #     "iscrowd": None,
+            #     "keypoints": [],
+            #     "image_id": 506412614,
+            #     "bbox": [],
+            #     "category_id": int,
+            #     "id": None
+            # }
+        ]
+
+    }
+    return coco
 
 def resize_keypoints(keypoints, box, input_size):
     return keypoints * (box[2:] - box[:2]) / input_size + box[:2]
@@ -138,7 +205,7 @@ def test(save_img=False):
     else:
         (save_dir).mkdir(parents=True, exist_ok=True)  # make dir
     jdict = []
-    gt_jdict = []
+    gt_coco = make_coco_dataset()
 
     # Get names and colors
     names = model.module.names if hasattr(model, "module") else model.names
@@ -231,10 +298,13 @@ def test(save_img=False):
 
                     jdict.append(
                         {
+                            "area": box[2]*box[3],
+                            "iscrowd": 0,
+                            "id": image_id,
                             "image_id": image_id,
                             "category_id": int(cls),
                             "num_keypoints": num_keypoints,
-                            "keypoints": np.concatenate((dt_keypoint, visibility), axis=1).tolist(),
+                            "keypoints": np.concatenate((dt_keypoint, visibility), axis=1).reshape(-1).tolist(),
                             "bbox": [round(x, 3) for x in box],
                             "score": round(conf, 5),
                         }
@@ -242,20 +312,34 @@ def test(save_img=False):
 
                     # Write ground truth json
                     if annotations:
-                        box = xyxy2xywh(torch.tensor(gt_box[i]).view(1, 4)).view(-1)  # xywh
+                        box = gt_box[i]
                         box[:2] -= box[2:] / 2  # xy center to top-left corner
+                        box[[0,2]] *= 640
+                        box[[1,3]] *= 480
                         box = box.tolist()
 
                         gt_keypoint = gt_keypoints[i]
                         num_keypoints = gt_keypoint.shape[0]
-                        visibility = np.zeros((num_keypoints, 1)) * 2
-                        gt_jdict.append(
+                        visibility = np.ones((num_keypoints, 1)) * 2
+                        gt_coco["annotations"].append(
                             {
+                                "area": box[2]*box[3],
+                                "iscrowd": 0,
+                                "id": image_id,
                                 "image_id": image_id,
                                 "category_id": 0,
                                 "num_keypoints": num_keypoints,
-                                "keypoints": np.concatenate((gt_keypoint, visibility), axis=1).tolist(),
+                                "keypoints": np.concatenate((gt_keypoint, visibility), axis=1).reshape(-1).tolist(),
                                 "bbox": [round(x, 3) for x in box],
+                            }
+                        )
+                        gt_coco["images"].append(
+                            {
+                                "license": 1,
+                                "file_name": path.name,
+                                "height": 480,
+                                "width": 640,
+                                "id": image_id,
                             }
                         )
 
@@ -308,21 +392,7 @@ def test(save_img=False):
             json.dump(jdict, f)
         if annotations:
             with open(anno_json, "w") as f:
-                json.dump(gt_jdict, f)
-
-        try:  # https://github.com/cocodataset/cocoapi/blob/master/PythonAPI/pycocoEvalDemo.ipynb
-            from pycocotools.coco import COCO
-            from pycocotools.cocoeval import COCOeval
-
-            anno = COCO(anno_json)  # init annotations api
-            pred = anno.loadRes(pred_json)  # init predictions api
-            eval = COCOeval(anno, pred, "bbox")
-            eval.evaluate()
-            eval.accumulate()
-            eval.summarize()
-            # map, map50 = eval.stats[:2]  # update results (mAP@0.5:0.95, mAP@0.5)
-        except Exception as e:
-            print(f"pycocotools unable to run: {e}")
+                json.dump(gt_coco, f)
 
     print(f"Done. ({time.time() - t0:.3f}s)")
 
@@ -334,7 +404,7 @@ if __name__ == "__main__":
     #     cli = paramiko.SSHClient()
     #     cli.set_missing_host_key_policy(paramiko.AutoAddPolicy)
     #     ser = server[i]
-    #     cli.connect(ser, port=22, username='cnu_r', password='esnesla6792')
+    #     cli.connect(ser, port=22, username='', password='')
     #     cli.exec_command('conda activate base')
     #     stdin, stdout, stderr = cli.exec_command('python /Users/cnu_r/OneDrive/Desktop/EtherSense/EtherSenseServer.py')
     #     client.append(cli)

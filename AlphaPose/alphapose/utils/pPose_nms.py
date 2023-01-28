@@ -791,23 +791,3 @@ def ppose_nms_validate_preprocess(_res):
 
 
     return _tmp_data
-
-'''
-This is a user-defined function.
-It returns coordinates of proposed skeletons and bounding boxes.
-'''
-def write_txt(all_results, outputpath, dtype):
-
-    assert dtype in ['train', 'test'], "Data type is not either train or test"
-
-    upper_body = [0, 5, 6, 7, 8, 9, 10, 11, 12]
-
-    for im_res in all_results:
-        im_name = im_res['imgname']
-        image_id = int(os.path.basename(im_name).split('.')[0].split('_')[-1])
-
-        with h5py.File(os.path.join(outputpath, f'ICU_{dtype}_labels.h5'), 'r+') as f:
-            if len(im_res['result']) == 1:
-                human = im_res['result'][0]
-                f['image_coordinates'][image_id] = human['keypoints'][upper_body][:,:2].numpy()
-        

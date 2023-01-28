@@ -99,6 +99,7 @@ def evaluate_mAP(res_file, ann_type='bbox', ann_file='./data/coco/annotations/pe
     cocoDt = cocoGt.loadRes(res_file)
 
     cocoEval = COCOeval(cocoGt, cocoDt, ann_type)
+    cocoEval.params.kpt_oks_sigmas = np.array([.26, .79, .79, .72, .72, .62,.62, 1.07, 1.07])/10.0
     cocoEval.evaluate()
     cocoEval.accumulate()
     cocoEval.summarize()

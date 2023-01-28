@@ -131,7 +131,7 @@ def validate(m, opt, heatmap_to_coord, batch_size=20):
     combined_loss = (cfg.LOSS.get('TYPE') == 'Combined')
 
     halpe = (cfg.DATA_PRESET.NUM_JOINTS == 133) or (cfg.DATA_PRESET.NUM_JOINTS == 136)
-
+    inps, labels, label_masks, img_ids, bboxes
     for inps, crop_bboxes, bboxes, img_ids, scores, imghts, imgwds in tqdm(det_loader, dynamic_ncols=True):
         if isinstance(inps, list):
             inps = [inp.cuda() for inp in inps]
@@ -300,8 +300,8 @@ def main():
             # Prediction Test
             with torch.no_grad():
                 gt_AP = validate_gt(m.module, opt, cfg, heatmap_to_coord)
-                rcnn_AP = validate(m.module, opt, heatmap_to_coord)
-                logger.info(f'##### Epoch {opt.epoch} | gt mAP: {gt_AP} | rcnn mAP: {rcnn_AP} #####')
+                # rcnn_AP = validate(m.module, opt, heatmap_to_coord)
+                logger.info(f'##### Epoch {opt.epoch} | gt mAP: {gt_AP}') # | rcnn mAP: {rcnn_AP} #####')
 
         # Time to add DPG
         if i == cfg.TRAIN.DPG_MILESTONE:

@@ -32,7 +32,7 @@ DATA_PRESET:
   - 64
   - 48
 MODEL:
-  TYPE: 'SimplePose'
+  TYPE: 'A2J'
   PRETRAINED: ''
   TRY_LOAD: ''
   NUM_DECONV_FILTERS:

@@ -70,11 +70,6 @@ parser.add_argument('--flip', default=False, action='store_true',
                     help='enable flip testing')
 parser.add_argument('--debug', default=False, action='store_true',
                     help='print detail information')
-'''
-User defined option
-'''
-parser.add_argument('--dtype', default="", dest='dtype',
-                    help='train or test')
 """----------------------------- Video options -----------------------------"""
 parser.add_argument('--video', dest='video',
                     help='video-name', default="")
@@ -134,7 +129,6 @@ def check_input():
         inputpath = args.inputpath
         inputlist = args.inputlist
         inputimg = args.inputimg
-
         if len(inputlist):
             im_names = open(inputlist, 'r').readlines()
         elif len(inputpath) and inputpath != '/':
@@ -164,12 +158,6 @@ def loop():
         yield n
         n += 1
 
-def create_labels(data_len):
-    with h5py.File(os.path.join(args.outputpath, f'ICU_{args.dtype}_labels.h5'), 'w') as f:
-        f.create_dataset('is_valid', data=np.zeros(data_len))
-        f.create_dataset('image_coordinates', data=np.zeros((data_len, 9, 2)))
-        f.create_dataset('bounding_box', data=np.zeros((data_len, 4)))
-
 if __name__ == "__main__":
     mode, input_source = check_input()
 
@@ -186,9 +174,6 @@ if __name__ == "__main__":
     else:
         det_loader = DetectionLoader(input_source, get_detector(args), cfg, args, batchSize=args.detbatch, mode=mode, queueSize=args.qsize)
         det_worker = det_loader.start()
-
-    # Create h5 file containing keypoints and bounding box results
-    create_labels(det_loader.length)
 
     # Load pose model
     pose_model = builder.build_sppe(cfg.MODEL, preset_cfg=cfg.DATA_PRESET)

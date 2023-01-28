@@ -9,7 +9,7 @@ import torch
 import torch.multiprocessing as mp
 
 from alphapose.utils.transforms import get_func_heatmap_to_coord
-from alphapose.utils.pPose_nms import pose_nms, write_json, write_txt
+from alphapose.utils.pPose_nms import pose_nms, write_json
 
 DEFAULT_VIDEO_SAVE_OPT = {
     'savepath': 'examples/res/1.mp4',
@@ -100,11 +100,7 @@ class DataWriter():
                 # if the thread indicator variable is set (img is None), stop the thread
                 if self.save_video:
                     stream.release()
-                '''
-                write_txt is a user-defined function.
-                '''
-                write_txt(final_result, self.opt.outputpath, self.opt.dtype)
-                # write_json(final_result, self.opt.outputpath, form=self.opt.format, for_eval=self.opt.eval)
+                write_json(final_result, self.opt.outputpath, form=self.opt.format, for_eval=self.opt.eval)
                 print("Results have been written to json.")
                 return
             # image channel RGB->BGR

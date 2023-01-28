@@ -12,16 +12,34 @@ set -x
 #     --outdir ${OUTDIR} \
 #     --detector yolo  --save_img --save_video
 
-CONFIG=${1:-"configs/coco/resnet/256x192_res50_lr1e-3_2x-dcn.yaml"}
-CKPT=${2:-"pretrained_models/fast_dcn_res50_256x192.pth"}
-# INDIR=${3:-"/home/ubuntu/workspace/@ICU/AlphaPose/examples/demo"}
-INDIR=${3:-"/home/ubuntu/workspace/@ICU/datasets/test/color_img"}
-OUTDIR=${4:-"/home/ubuntu/workspace/@ICU/datasets/test/res"}
+CONFIG=${1:-"configs/coco/resnet/256x192_res50_lr1e-3_1x.yaml"}
+CKPT=${2:-"pretrained_models/fast_res50_256x192.pth"}
+INDIR=${3:-"../data/train/color_img"}
+OUTDIR=${4:-"../data/train/res"}
 
 python scripts/demo_inference.py \
     --cfg ${CONFIG} \
     --checkpoint ${CKPT} \
     --indir ${INDIR} \
     --outdir ${OUTDIR} \
-    --dtype test --detbatch 16 --posebatch 256 \
-    # --save_img  --showbox
+    --detbatch 4 --posebatch 32 --eval\
+
+INDIR=${3:-"../data/test/color_img"}
+OUTDIR=${4:-"../data/test/res"}
+
+python scripts/demo_inference.py \
+    --cfg ${CONFIG} \
+    --checkpoint ${CKPT} \
+    --indir ${INDIR} \
+    --outdir ${OUTDIR} \
+    --detbatch 4 --posebatch 32 --eval\
+
+INDIR=${3:-"../data/val/color_img"}
+OUTDIR=${4:-"../data/val/res"}
+
+python scripts/demo_inference.py \
+    --cfg ${CONFIG} \
+    --checkpoint ${CKPT} \
+    --indir ${INDIR} \
+    --outdir ${OUTDIR} \
+    --detbatch 4 --posebatch 32 --eval\

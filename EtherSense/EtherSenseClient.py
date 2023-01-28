@@ -179,7 +179,7 @@ def multi_cast_message(message, num_servers, shared_lock, shared_queue):
         # Send data to the multicast group
         print('sending "%s"' % message + str(multicast_group))
         sock.sendto(message.encode(), multicast_group)
-    
+        
         # defer waiting for a response using Asyncore
         
         asyncore.loop()
