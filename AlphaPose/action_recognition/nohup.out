@@ -1,0 +1,319 @@
++ CONFIG=./configs/posec3d/x3d_shallow_icu/limb.py
++ GPUS=1
+++ dirname ./tools/dist_train.sh
++ MKL_SERVICE_FORCE_INTEL=1
+++ dirname ./tools/dist_train.sh
++ PYTHONPATH=./tools/..:
++ python -m torch.distributed.launch --nproc_per_node=1 --master_port=27062 ./tools/train.py ./configs/posec3d/x3d_shallow_icu/limb.py --launcher pytorch --validate
+2023-02-02 19:25:03,344 - pyskl - INFO - Environment info:
+------------------------------------------------------------
+sys.platform: linux
+Python: 3.7.16 (default, Jan 17 2023, 22:20:44) [GCC 11.2.0]
+CUDA available: True
+GPU 0: NVIDIA TITAN V
+CUDA_HOME: /usr/local/cuda
+NVCC: Cuda compilation tools, release 11.6, V11.6.55
+GCC: gcc (Ubuntu 9.4.0-1ubuntu1~20.04.1) 9.4.0
+PyTorch: 1.12.0
+PyTorch compiling details: PyTorch built with:
+  - GCC 9.3
+  - C++ Version: 201402
+  - Intel(R) oneAPI Math Kernel Library Version 2021.4-Product Build 20210904 for Intel(R) 64 architecture applications
+  - Intel(R) MKL-DNN v2.6.0 (Git Hash 52b5f107dd9cf10910aaa19cb47f3abf9b349815)
+  - OpenMP 201511 (a.k.a. OpenMP 4.5)
+  - LAPACK is enabled (usually provided by MKL)
+  - NNPACK is enabled
+  - CPU capability usage: AVX2
+  - CUDA Runtime 11.6
+  - NVCC architecture flags: -gencode;arch=compute_37,code=sm_37;-gencode;arch=compute_50,code=sm_50;-gencode;arch=compute_60,code=sm_60;-gencode;arch=compute_61,code=sm_61;-gencode;arch=compute_70,code=sm_70;-gencode;arch=compute_75,code=sm_75;-gencode;arch=compute_80,code=sm_80;-gencode;arch=compute_86,code=sm_86;-gencode;arch=compute_37,code=compute_37
+  - CuDNN 8.3.2  (built against CUDA 11.5)
+  - Magma 2.6.1
+  - Build settings: BLAS_INFO=mkl, BUILD_TYPE=Release, CUDA_VERSION=11.6, CUDNN_VERSION=8.3.2, CXX_COMPILER=/opt/rh/devtoolset-9/root/usr/bin/c++, CXX_FLAGS= -Wno-deprecated -fvisibility-inlines-hidden -DUSE_PTHREADPOOL -fopenmp -DNDEBUG -DUSE_KINETO -DUSE_FBGEMM -DUSE_QNNPACK -DUSE_PYTORCH_QNNPACK -DUSE_XNNPACK -DSYMBOLICATE_MOBILE_DEBUG_HANDLE -DEDGE_PROFILER_USE_KINETO -O2 -fPIC -Wno-narrowing -Wall -Wextra -Werror=return-type -Wno-missing-field-initializers -Wno-type-limits -Wno-array-bounds -Wno-unknown-pragmas -Wno-unused-parameter -Wno-unused-function -Wno-unused-result -Wno-unused-local-typedefs -Wno-strict-overflow -Wno-strict-aliasing -Wno-error=deprecated-declarations -Wno-stringop-overflow -Wno-psabi -Wno-error=pedantic -Wno-error=redundant-decls -Wno-error=old-style-cast -fdiagnostics-color=always -faligned-new -Wno-unused-but-set-variable -Wno-maybe-uninitialized -fno-math-errno -fno-trapping-math -Werror=format -Werror=cast-function-type -Wno-stringop-overflow, LAPACK_INFO=mkl, PERF_WITH_AVX=1, PERF_WITH_AVX2=1, PERF_WITH_AVX512=1, TORCH_VERSION=1.12.0, USE_CUDA=ON, USE_CUDNN=ON, USE_EXCEPTION_PTR=1, USE_GFLAGS=OFF, USE_GLOG=OFF, USE_MKL=ON, USE_MKLDNN=OFF, USE_MPI=OFF, USE_NCCL=ON, USE_NNPACK=ON, USE_OPENMP=ON, USE_ROCM=OFF, 
+
+TorchVision: 0.13.0
+OpenCV: 4.7.0
+MMCV: 1.5.0
+MMCV Compiler: GCC 9.4
+MMCV CUDA Compiler: 11.6
+pyskl: 0.1.0+b8436a2
+------------------------------------------------------------
+
+2023-02-02 19:25:04,666 - pyskl - INFO - Config: model = dict(
+    type='Recognizer3D',
+    backbone=dict(
+        type='X3D',
+        gamma_d=1,
+        in_channels=9,
+        base_channels=24,
+        num_stages=3,
+        se_ratio=None,
+        use_swish=False,
+        stage_blocks=(2, 5, 3),
+        spatial_strides=(2, 2, 2)),
+    cls_head=dict(type='I3DHead', in_channels=216, num_classes=5, dropout=0.5),
+    test_cfg=dict(average_clips='prob'))
+dataset_type = 'PoseDataset'
+ann_file = '../data/pyskl/icu_alphapose.pkl'
+left_kp = [1, 3, 5, 7]
+right_kp = [2, 4, 6, 8]
+skeletons = [[0, 1], [0, 2], [1, 3], [2, 4], [3, 5], [4, 6], [7, 8], [2, 8],
+             [1, 7]]
+left_limb = [0, 2, 4, 8]
+right_limb = [1, 3, 5, 7]
+train_pipeline = [
+    dict(type='SampleFrames', clip_len=48),
+    dict(type='PoseDecode'),
+    dict(type='PoseCompact', hw_ratio=1.0, allow_imgpad=True),
+    dict(type='Resize', scale=(-1, 64)),
+    dict(type='RandomResizedCrop', area_range=(0.56, 1.0)),
+    dict(type='Resize', scale=(56, 56), keep_ratio=False),
+    dict(
+        type='Flip',
+        flip_ratio=0.5,
+        left_kp=[1, 3, 5, 7],
+        right_kp=[2, 4, 6, 8]),
+    dict(
+        type='GeneratePoseTarget',
+        with_kp=False,
+        with_limb=True,
+        skeletons=[[0, 1], [0, 2], [1, 3], [2, 4], [3, 5], [4, 6], [7, 8],
+                   [2, 8], [1, 7]]),
+    dict(type='FormatShape', input_format='NCTHW_Heatmap'),
+    dict(type='Collect', keys=['imgs', 'label'], meta_keys=[]),
+    dict(type='ToTensor', keys=['imgs', 'label'])
+]
+val_pipeline = [
+    dict(type='SampleFrames', clip_len=48),
+    dict(type='PoseDecode'),
+    dict(type='PoseCompact', hw_ratio=1.0, allow_imgpad=True),
+    dict(type='Resize', scale=(64, 64), keep_ratio=False),
+    dict(
+        type='GeneratePoseTarget',
+        with_kp=False,
+        with_limb=True,
+        skeletons=[[0, 1], [0, 2], [1, 3], [2, 4], [3, 5], [4, 6], [7, 8],
+                   [2, 8], [1, 7]]),
+    dict(type='FormatShape', input_format='NCTHW_Heatmap'),
+    dict(type='Collect', keys=['imgs', 'label'], meta_keys=[]),
+    dict(type='ToTensor', keys=['imgs'])
+]
+test_pipeline = [
+    dict(type='SampleFrames', clip_len=48, num_clips=50),
+    dict(type='PoseDecode'),
+    dict(type='PoseCompact', hw_ratio=1.0, allow_imgpad=True),
+    dict(type='Resize', scale=(64, 64), keep_ratio=False),
+    dict(
+        type='GeneratePoseTarget',
+        with_kp=False,
+        with_limb=True,
+        skeletons=[[0, 1], [0, 2], [1, 3], [2, 4], [3, 5], [4, 6], [7, 8],
+                   [2, 8], [1, 7]],
+        double=True,
+        left_kp=[1, 3, 5, 7],
+        right_kp=[2, 4, 6, 8],
+        left_limb=[0, 2, 4, 8],
+        right_limb=[1, 3, 5, 7]),
+    dict(type='FormatShape', input_format='NCTHW_Heatmap'),
+    dict(type='Collect', keys=['imgs', 'label'], meta_keys=[]),
+    dict(type='ToTensor', keys=['imgs'])
+]
+data = dict(
+    videos_per_gpu=64,
+    workers_per_gpu=16,
+    test_dataloader=dict(videos_per_gpu=1),
+    train=dict(
+        type='RepeatDataset',
+        times=50,
+        dataset=dict(
+            type='PoseDataset',
+            ann_file='../data/pyskl/icu_alphapose.pkl',
+            split='train',
+            pipeline=[
+                dict(type='SampleFrames', clip_len=48),
+                dict(type='PoseDecode'),
+                dict(type='PoseCompact', hw_ratio=1.0, allow_imgpad=True),
+                dict(type='Resize', scale=(-1, 64)),
+                dict(type='RandomResizedCrop', area_range=(0.56, 1.0)),
+                dict(type='Resize', scale=(56, 56), keep_ratio=False),
+                dict(
+                    type='Flip',
+                    flip_ratio=0.5,
+                    left_kp=[1, 3, 5, 7],
+                    right_kp=[2, 4, 6, 8]),
+                dict(
+                    type='GeneratePoseTarget',
+                    with_kp=False,
+                    with_limb=True,
+                    skeletons=[[0, 1], [0, 2], [1, 3], [2, 4], [3, 5], [4, 6],
+                               [7, 8], [2, 8], [1, 7]]),
+                dict(type='FormatShape', input_format='NCTHW_Heatmap'),
+                dict(type='Collect', keys=['imgs', 'label'], meta_keys=[]),
+                dict(type='ToTensor', keys=['imgs', 'label'])
+            ])),
+    val=dict(
+        type='PoseDataset',
+        ann_file='../data/pyskl/icu_alphapose.pkl',
+        split='val',
+        pipeline=[
+            dict(type='SampleFrames', clip_len=48),
+            dict(type='PoseDecode'),
+            dict(type='PoseCompact', hw_ratio=1.0, allow_imgpad=True),
+            dict(type='Resize', scale=(64, 64), keep_ratio=False),
+            dict(
+                type='GeneratePoseTarget',
+                with_kp=False,
+                with_limb=True,
+                skeletons=[[0, 1], [0, 2], [1, 3], [2, 4], [3, 5], [4, 6],
+                           [7, 8], [2, 8], [1, 7]]),
+            dict(type='FormatShape', input_format='NCTHW_Heatmap'),
+            dict(type='Collect', keys=['imgs', 'label'], meta_keys=[]),
+            dict(type='ToTensor', keys=['imgs'])
+        ]),
+    test=dict(
+        type='PoseDataset',
+        ann_file='../data/pyskl/icu_alphapose.pkl',
+        split='val',
+        pipeline=[
+            dict(type='SampleFrames', clip_len=48, num_clips=50),
+            dict(type='PoseDecode'),
+            dict(type='PoseCompact', hw_ratio=1.0, allow_imgpad=True),
+            dict(type='Resize', scale=(64, 64), keep_ratio=False),
+            dict(
+                type='GeneratePoseTarget',
+                with_kp=False,
+                with_limb=True,
+                skeletons=[[0, 1], [0, 2], [1, 3], [2, 4], [3, 5], [4, 6],
+                           [7, 8], [2, 8], [1, 7]],
+                double=True,
+                left_kp=[1, 3, 5, 7],
+                right_kp=[2, 4, 6, 8],
+                left_limb=[0, 2, 4, 8],
+                right_limb=[1, 3, 5, 7]),
+            dict(type='FormatShape', input_format='NCTHW_Heatmap'),
+            dict(type='Collect', keys=['imgs', 'label'], meta_keys=[]),
+            dict(type='ToTensor', keys=['imgs'])
+        ]))
+optimizer = dict(type='SGD', lr=0.4, momentum=0.9, weight_decay=0.0003)
+optimizer_config = dict(grad_clip=dict(max_norm=40, norm_type=2))
+lr_config = dict(policy='CosineAnnealing', by_epoch=False, min_lr=0)
+total_epochs = 50
+checkpoint_config = dict(interval=1)
+evaluation = dict(
+    interval=1, metrics=['top_k_accuracy', 'mean_class_accuracy'], topk=(1, 5))
+log_config = dict(interval=20, hooks=[dict(type='TextLoggerHook')])
+dist_params = dict(backend='nccl')
+log_level = 'INFO'
+work_dir = './work_dirs/posec3d/x3d_shallow_icu/limb'
+gpu_ids = range(0, 1)
+
+2023-02-02 19:25:04,674 - pyskl - INFO - Set random seed to 1543869005, deterministic: False
+2023-02-02 19:25:04,711 - pyskl - INFO - 105 videos remain after valid thresholding
+2023-02-02 19:25:07,267 - pyskl - INFO - 15 videos remain after valid thresholding
+2023-02-02 19:25:07,268 - pyskl - INFO - Start running, host: nistring@nistring-X399-AORUS-Gaming-7, work_dir: /media/nistring/0f737a3f-358d-45e0-827c-473d6a7d555b/workspace/Abnormal-behavior-detection-in-ICU/AlphaPose/pyskl/work_dirs/posec3d/x3d_shallow_icu/limb
+2023-02-02 19:25:07,268 - pyskl - INFO - Hooks will be executed in the following order:
+before_run:
+(VERY_HIGH   ) CosineAnnealingLrUpdaterHook       
+(NORMAL      ) CheckpointHook                     
+(NORMAL      ) DistEvalHook                       
+(VERY_LOW    ) TextLoggerHook                     
+ -------------------- 
+before_train_epoch:
+(VERY_HIGH   ) CosineAnnealingLrUpdaterHook       
+(NORMAL      ) DistSamplerSeedHook                
+(NORMAL      ) DistEvalHook                       
+(LOW         ) IterTimerHook                      
+(VERY_LOW    ) TextLoggerHook                     
+ -------------------- 
+before_train_iter:
+(VERY_HIGH   ) CosineAnnealingLrUpdaterHook       
+(NORMAL      ) DistEvalHook                       
+(LOW         ) IterTimerHook                      
+ -------------------- 
+after_train_iter:
+(ABOVE_NORMAL) OptimizerHook                      
+(NORMAL      ) CheckpointHook                     
+(NORMAL      ) DistEvalHook                       
+(LOW         ) IterTimerHook                      
+(VERY_LOW    ) TextLoggerHook                     
+ -------------------- 
+after_train_epoch:
+(NORMAL      ) CheckpointHook                     
+(NORMAL      ) DistEvalHook                       
+(VERY_LOW    ) TextLoggerHook                     
+ -------------------- 
+before_val_epoch:
+(NORMAL      ) DistSamplerSeedHook                
+(LOW         ) IterTimerHook                      
+(VERY_LOW    ) TextLoggerHook                     
+ -------------------- 
+before_val_iter:
+(LOW         ) IterTimerHook                      
+ -------------------- 
+after_val_iter:
+(LOW         ) IterTimerHook                      
+ -------------------- 
+after_val_epoch:
+(VERY_LOW    ) TextLoggerHook                     
+ -------------------- 
+after_run:
+(VERY_LOW    ) TextLoggerHook                     
+ -------------------- 
+2023-02-02 19:25:07,268 - pyskl - INFO - workflow: [('train', 1)], max: 50 epochs
+2023-02-02 19:25:07,268 - pyskl - INFO - Checkpoints will be saved to /media/nistring/0f737a3f-358d-45e0-827c-473d6a7d555b/workspace/Abnormal-behavior-detection-in-ICU/AlphaPose/pyskl/work_dirs/posec3d/x3d_shallow_icu/limb by HardDiskBackend.
+/home/nistring/miniconda3/envs/ICU/lib/python3.7/site-packages/torch/distributed/launch.py:186: FutureWarning: The module torch.distributed.launch is deprecated
+and will be removed in future. Use torchrun.
+Note that --use_env is set by default in torchrun.
+If your script expects `--local_rank` argument to be set, please
+change it to read from `os.environ['LOCAL_RANK']` instead. See 
+https://pytorch.org/docs/stable/distributed.html#launch-utility for 
+further instructions
+
+  FutureWarning,
+WARNING:torch.distributed.elastic.agent.server.api:Received 1 death signal, shutting down workers
+WARNING:torch.distributed.elastic.multiprocessing.api:Sending process 50273 closing signal SIGHUP
+WARNING:torch.distributed.elastic.multiprocessing.api:Sending process 50273 closing signal SIGTERM
+Traceback (most recent call last):
+  File "/home/nistring/miniconda3/envs/ICU/lib/python3.7/site-packages/torch/distributed/elastic/agent/server/api.py", line 709, in run
+    result = self._invoke_run(role)
+  File "/home/nistring/miniconda3/envs/ICU/lib/python3.7/site-packages/torch/distributed/elastic/agent/server/api.py", line 850, in _invoke_run
+    time.sleep(monitor_interval)
+  File "/home/nistring/miniconda3/envs/ICU/lib/python3.7/site-packages/torch/distributed/elastic/multiprocessing/api.py", line 60, in _terminate_process_handler
+    raise SignalException(f"Process {os.getpid()} got signal: {sigval}", sigval=sigval)
+torch.distributed.elastic.multiprocessing.api.SignalException: Process 50265 got signal: 1
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/nistring/miniconda3/envs/ICU/lib/python3.7/runpy.py", line 193, in _run_module_as_main
+    "__main__", mod_spec)
+  File "/home/nistring/miniconda3/envs/ICU/lib/python3.7/runpy.py", line 85, in _run_code
+    exec(code, run_globals)
+  File "/home/nistring/miniconda3/envs/ICU/lib/python3.7/site-packages/torch/distributed/launch.py", line 193, in <module>
+    main()
+  File "/home/nistring/miniconda3/envs/ICU/lib/python3.7/site-packages/torch/distributed/launch.py", line 189, in main
+    launch(args)
+  File "/home/nistring/miniconda3/envs/ICU/lib/python3.7/site-packages/torch/distributed/launch.py", line 174, in launch
+    run(args)
+  File "/home/nistring/miniconda3/envs/ICU/lib/python3.7/site-packages/torch/distributed/run.py", line 755, in run
+    )(*cmd_args)
+  File "/home/nistring/miniconda3/envs/ICU/lib/python3.7/site-packages/torch/distributed/launcher/api.py", line 131, in __call__
+    return launch_agent(self._config, self._entrypoint, list(args))
+  File "/home/nistring/miniconda3/envs/ICU/lib/python3.7/site-packages/torch/distributed/launcher/api.py", line 236, in launch_agent
+    result = agent.run()
+  File "/home/nistring/miniconda3/envs/ICU/lib/python3.7/site-packages/torch/distributed/elastic/metrics/api.py", line 125, in wrapper
+    result = f(*args, **kwargs)
+  File "/home/nistring/miniconda3/envs/ICU/lib/python3.7/site-packages/torch/distributed/elastic/agent/server/api.py", line 716, in run
+    self._shutdown(e.sigval)
+  File "/home/nistring/miniconda3/envs/ICU/lib/python3.7/site-packages/torch/distributed/elastic/agent/server/local_elastic_agent.py", line 193, in _shutdown
+    self._pcontext.close(death_sig)
+  File "/home/nistring/miniconda3/envs/ICU/lib/python3.7/site-packages/torch/distributed/elastic/multiprocessing/api.py", line 330, in close
+    self._close(death_sig=death_sig, timeout=timeout)
+  File "/home/nistring/miniconda3/envs/ICU/lib/python3.7/site-packages/torch/distributed/elastic/multiprocessing/api.py", line 707, in _close
+    handler.proc.wait(time_to_wait)
+  File "/home/nistring/miniconda3/envs/ICU/lib/python3.7/subprocess.py", line 1019, in wait
+    return self._wait(timeout=timeout)
+  File "/home/nistring/miniconda3/envs/ICU/lib/python3.7/subprocess.py", line 1647, in _wait
+    time.sleep(delay)
+  File "/home/nistring/miniconda3/envs/ICU/lib/python3.7/site-packages/torch/distributed/elastic/multiprocessing/api.py", line 60, in _terminate_process_handler
+    raise SignalException(f"Process {os.getpid()} got signal: {sigval}", sigval=sigval)
+torch.distributed.elastic.multiprocessing.api.SignalException: Process 50265 got signal: 1
