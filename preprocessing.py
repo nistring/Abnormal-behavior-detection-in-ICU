@@ -11,6 +11,34 @@ from save_video import D2RGB
 import numpy as np
 import cv2
 import pathlib
+import pickle
+
+action_list = {
+    "normal": 0,
+    "tube": 1,
+    "escape": 2,
+    "tossturn": 3,
+    "seizure": 4,
+}
+
+pyskl_data = {
+    "split": {
+        "train": [],
+        "val": [],
+        "test": [],
+    },
+    "annotations": [
+        {
+        # 'frame_dir': str,
+        # 'total_frames': int,
+        # 'img_shape': (480, 640),
+        # 'original_shape': (480, 640),
+        # 'label': int
+        # 'keypoint': np.ndarray
+        # 'keypoint_score': np.ndarray
+        }
+    ],
+}
 
 
 def compress_depth_map(dst):
@@ -39,20 +67,40 @@ def move_images():
                 angle_path = os.path.join(dir_path, angle)
                 for movement in os.listdir(angle_path):
                     movement_path = os.path.join(angle_path, movement)
+
+                    # pyskl
+                    total_frames = len(os.listdir(os.path.join(movement_path, copy_dir_list[0])))
+                    video_id = "_".join([dir, angle, movement, str(global_idx), str(global_idx + total_frames)])
+
+                    pyskl_data["split"][key].append(video_id)
+                    pyskl_data["annotations"].append(
+                        {
+                        'frame_dir': video_id,
+                        'total_frames': total_frames,
+                        'img_shape': (480, 640),
+                        'original_shape': (480, 640),
+                        'label': action_list[movement]
+                        }
+                    )
+
                     for data_type in copy_dir_list:
                         data_type_path = os.path.join(movement_path, data_type)
                         local_idx = global_idx
                         sorted_files = sorted(os.listdir(data_type_path), key=lambda x: int(pathlib.Path(x).stem))
+
                         for file in sorted_files:
                             _, ext = os.path.splitext(file)
                             src_path = os.path.join(movement_path, data_type, file)
                             dst_path = os.path.join(dst, data_type, str(local_idx).zfill(5) + ext)
-                            shutil.copyfile(src_path, dst_path)
+
+                            # shutil.copyfile(src_path, dst_path)
                             local_idx += 1
                     global_idx = local_idx
 
-        compress_depth_map(dst)
+        # compress_depth_map(dst)
 
+    with open(os.path.join(root, "data/icu_alphapose.pkl"), "wb") as f:
+        pickle.dump(pyskl_data, f)
 
 if __name__ == "__main__":
     move_images()

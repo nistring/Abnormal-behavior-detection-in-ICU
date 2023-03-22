@@ -207,6 +207,17 @@ def vis_frame_fast(frame, im_res, opt, vis_thres, format='coco'):
                    (255, 255, 255), (255, 255, 255), (255, 255, 255), (255, 255, 255), (255, 255, 255),
                    (255, 255, 255), (255, 255, 255), (255, 255, 255), (255, 255, 255), (255, 255, 255),
                    (255, 255, 255) ]
+    elif kp_num == 9: # ICU
+        if format == 'coco':
+            l_pair = [(0, 1), (0, 2), (1, 3), (2, 4), (3, 5), (4, 6), (7, 8), (2, 8), (1, 7)]
+
+            p_color = [(0, 255, 255), (0, 191, 255), (0, 255, 102), (0, 77, 255), (0, 255, 0),  # Nose, LEye, REye, LEar, REar
+                       (77, 255, 255), (77, 255, 204), (77, 204, 255), (191, 255, 77), (77, 191, 255), (191, 255, 77),  # LShoulder, RShoulder, LElbow, RElbow, LWrist, RWrist
+                       (204, 77, 255), (77, 255, 204), (191, 77, 255), (77, 255, 191), (127, 77, 255), (77, 255, 127), (0, 255, 255)]  # LHip, RHip, LKnee, Rknee, LAnkle, RAnkle, Neck
+            line_color = [(0, 215, 255), (0, 255, 204), (0, 134, 255), (0, 255, 50),
+                          (77, 255, 222), (77, 196, 255), (77, 135, 255), (191, 255, 77), (77, 255, 77),
+                          (77, 222, 255), (255, 156, 127),
+                          (0, 127, 255), (255, 127, 77), (0, 77, 255), (255, 77, 36)]
     else:
         raise NotImplementedError
     # im_name = os.path.basename(im_res['imgname'])
@@ -227,6 +238,11 @@ def vis_frame_fast(frame, im_res, opt, vis_thres, format='coco'):
             color = get_color_fast(int(abs(human['idx'])))
         else:
             color = BLUE
+        if opt.action:
+            anomaly_score = human['anomaly_score']
+            g = min(255, round(510 * (1-anomaly_score)))
+            r = min(255, round(510 * anomaly_score))
+            color = (0, g, r)
 
         # Draw bboxes
         if opt.showbox:
@@ -252,7 +268,7 @@ def vis_frame_fast(frame, im_res, opt, vis_thres, format='coco'):
             cor_x, cor_y = int(kp_preds[n, 0]), int(kp_preds[n, 1])
             part_line[n] = (cor_x, cor_y)
             if n < len(p_color):
-                if opt.tracking:
+                if opt.tracking or opt.action:
                     cv2.circle(img, (cor_x, cor_y), 3, color, -1)
                 else:
                     cv2.circle(img, (cor_x, cor_y), 3, p_color[n], -1)
@@ -264,7 +280,7 @@ def vis_frame_fast(frame, im_res, opt, vis_thres, format='coco'):
                 start_xy = part_line[start_p]
                 end_xy = part_line[end_p]
                 if i < len(line_color):
-                    if opt.tracking:
+                    if opt.tracking or opt.action:
                         cv2.line(img, start_xy, end_xy, color, 2 * int(kp_scores[start_p] + kp_scores[end_p]) + 1)
                     else:
                         cv2.line(img, start_xy, end_xy, line_color[i], 2 * int(kp_scores[start_p] + kp_scores[end_p]) + 1)
@@ -429,6 +445,17 @@ def vis_frame(frame, im_res, opt, vis_thres, format='coco'):
                    (255, 255, 255), (255, 255, 255), (255, 255, 255), (255, 255, 255), (255, 255, 255),
                    (255, 255, 255), (255, 255, 255), (255, 255, 255), (255, 255, 255), (255, 255, 255),
                    (255, 255, 255) ]
+    elif kp_num == 9: # ICU
+        if format == 'coco':
+            l_pair = [(0, 1), (0, 2), (1, 3), (2, 4), (3, 5), (4, 6), (7, 8), (2, 8), (1, 7)]
+
+            p_color = [(0, 255, 255), (0, 191, 255), (0, 255, 102), (0, 77, 255), (0, 255, 0),  # Nose, LEye, REye, LEar, REar
+                       (77, 255, 255), (77, 255, 204), (77, 204, 255), (191, 255, 77), (77, 191, 255), (191, 255, 77),  # LShoulder, RShoulder, LElbow, RElbow, LWrist, RWrist
+                       (204, 77, 255), (77, 255, 204), (191, 77, 255), (77, 255, 191), (127, 77, 255), (77, 255, 127), (0, 255, 255)]  # LHip, RHip, LKnee, Rknee, LAnkle, RAnkle, Neck
+            line_color = [(0, 215, 255), (0, 255, 204), (0, 134, 255), (0, 255, 50),
+                          (77, 255, 222), (77, 196, 255), (77, 135, 255), (191, 255, 77), (77, 255, 77),
+                          (77, 222, 255), (255, 156, 127),
+                          (0, 127, 255), (255, 127, 77), (0, 77, 255), (255, 77, 36)]
     else:
         raise NotImplementedError
     # im_name = os.path.basename(im_res['imgname'])
@@ -449,6 +476,11 @@ def vis_frame(frame, im_res, opt, vis_thres, format='coco'):
             color = get_color_fast(int(abs(human['idx'])))
         else:
             color = BLUE
+        if opt.action:
+            anomaly_score = human['anomaly_score']
+            g = min(255, round(510 * (1-anomaly_score)))
+            r = min(255, round(510 * anomaly_score))
+            color = (0, g, r)
 
         # Draw bboxes
         if opt.showbox:
@@ -476,7 +508,7 @@ def vis_frame(frame, im_res, opt, vis_thres, format='coco'):
             part_line[n] = (int(cor_x), int(cor_y))
             bg = img.copy()
             if n < len(p_color):
-                if opt.tracking:
+                if opt.tracking or opt.action:
                     cv2.circle(bg, (int(cor_x), int(cor_y)), 2, color, -1)
                 else:
                     cv2.circle(bg, (int(cor_x), int(cor_y)), 2, p_color[n], -1)
@@ -504,7 +536,7 @@ def vis_frame(frame, im_res, opt, vis_thres, format='coco'):
                 stickwidth = (kp_scores[start_p] + kp_scores[end_p]) + 1
                 polygon = cv2.ellipse2Poly((int(mX), int(mY)), (int(length/2), int(stickwidth)), int(angle), 0, 360, 1)
                 if i < len(line_color):
-                    if opt.tracking:
+                    if opt.tracking or opt.action:
                         cv2.fillConvexPoly(bg, polygon, color)
                     else:
                         cv2.fillConvexPoly(bg, polygon, line_color[i])

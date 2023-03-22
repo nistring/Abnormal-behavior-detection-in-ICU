@@ -6,10 +6,8 @@ from .fastpose_duc_dense import FastPose_DUC_Dense
 from .hardnet import HarDNetPose
 from .simple3dposeSMPLWithCam import Simple3DPoseBaseSMPLCam
 from .criterion import L1JointRegression
-from .A2J import A2J
 
 __all__ = ['FastPose', 'SimplePose', 'PoseHighResolutionNet',
            'FastPose_DUC', 'FastPose_DUC_Dense', 'HarDNetPose',
            'Simple3DPoseBaseSMPLCam',
-           'L1JointRegression',
-           'A2J']
+           'L1JointRegression',]

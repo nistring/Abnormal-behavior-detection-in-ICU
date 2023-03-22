@@ -13,7 +13,7 @@ DATASET:
   VAL:
     TYPE: 'Halpe_68_noface'
     ROOT: './data/halpe/'
-    IMG_PREFIX: 'images/val2017'
+    IMG_PREFIX: 'images/'
     ANN: 'annotations/halpe_val_v1.json'
   TEST:
     TYPE: 'Halpe_68_noface_det'

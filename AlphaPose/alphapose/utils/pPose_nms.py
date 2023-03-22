@@ -689,6 +689,9 @@ def write_json(all_results, outputpath, form=None, for_eval=False, outputfile='a
             #pose track results by PoseFlow
             if 'idx' in human.keys():
                 result['idx'] = human['idx']
+            # Action recognition results
+            if 'anomaly_score' in human.keys():
+                result['anomaly_score'] = float(human['anomaly_score'])
             
             # 3d pose
             if 'pred_xyz_jts' in human.keys():

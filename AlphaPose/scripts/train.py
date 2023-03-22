@@ -131,7 +131,7 @@ def validate(m, opt, heatmap_to_coord, batch_size=20):
     combined_loss = (cfg.LOSS.get('TYPE') == 'Combined')
 
     halpe = (cfg.DATA_PRESET.NUM_JOINTS == 133) or (cfg.DATA_PRESET.NUM_JOINTS == 136)
-    inps, labels, label_masks, img_ids, bboxes
+
     for inps, crop_bboxes, bboxes, img_ids, scores, imghts, imgwds in tqdm(det_loader, dynamic_ncols=True):
         if isinstance(inps, list):
             inps = [inp.cuda() for inp in inps]

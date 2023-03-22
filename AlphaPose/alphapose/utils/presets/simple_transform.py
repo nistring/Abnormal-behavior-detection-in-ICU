@@ -13,7 +13,7 @@ import torch
 from ..bbox import (_box_to_center_scale, _center_scale_to_box,
                     _clip_aspect_ratio)
 from ..transforms import (addDPG, affine_transform, flip_joints_3d,
-                          get_affine_transform, im_to_torch)
+                          get_affine_transform, im_to_torch, augment_hsv)
 
 # Only windows visual studio 2013 ~2017 support compile c/cuda extensions
 # If you force to compile extension on Windows and ensure appropriate visual studio
@@ -52,7 +52,8 @@ class SimpleTransform(object):
 
     def __init__(self, dataset, scale_factor, add_dpg,
                  input_size, output_size, rot, sigma,
-                 train, gpu_device=None, loss_type='MSELoss'):
+                 train, gpu_device=None, loss_type='MSELoss',
+                 prob_hsv=0.0):
         self._joint_pairs = dataset.joint_pairs
         self._scale_factor = scale_factor
         self._rot = rot
@@ -69,6 +70,8 @@ class SimpleTransform(object):
         self._feat_stride = np.array(input_size) / np.array(output_size)
 
         self.pixel_std = 1
+
+        self.prob_hsv = prob_hsv
 
         if train:
             self.num_joints_half_body = dataset.num_joints_half_body
@@ -201,6 +204,10 @@ class SimpleTransform(object):
         center, scale = _box_to_center_scale(
             xmin, ymin, xmax - xmin, ymax - ymin, self._aspect_ratio)
 
+        # Random hsv augmentation
+        if self._train and random.random() < self.prob_hsv:
+            augment_hsv(src)
+
         # half body transform
         if self._train and (np.sum(joints_vis[:, 0]) > self.num_joints_half_body and np.random.rand() < self.prob_half_body):
             c_half_body, s_half_body = self.half_body_transform(
@@ -264,7 +271,7 @@ class SimpleTransform(object):
         img[2].add_(-0.480)
         
         if self._loss_type == 'Combined':
-        	return img, [torch.from_numpy(target_mse), torch.from_numpy(target_inter)], [torch.from_numpy(target_weight_mse), torch.from_numpy(target_weight_inter)], torch.Tensor(bbox)
+            return img, [torch.from_numpy(target_mse), torch.from_numpy(target_inter)], [torch.from_numpy(target_weight_mse), torch.from_numpy(target_weight_inter)], torch.Tensor(bbox)
         else:
             return img, torch.from_numpy(target), torch.from_numpy(target_weight), torch.Tensor(bbox)
 

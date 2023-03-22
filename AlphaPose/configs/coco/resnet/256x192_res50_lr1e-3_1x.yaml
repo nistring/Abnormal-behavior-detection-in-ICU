@@ -1,9 +1,9 @@
 DATASET:
   TRAIN:
-    TYPE: 'ICU'
-    ROOT: './data/ICU/'
-    IMG_PREFIX: 'train'
-    ANN: 'annotations/person_keypoints_train.json'
+    TYPE: 'Mscoco'
+    ROOT: './data/coco/'
+    IMG_PREFIX: 'train2017'
+    ANN: 'annotations/person_keypoints_train2017.json'
     AUG:
       FLIP: true
       ROT_FACTOR: 40
@@ -11,20 +11,20 @@ DATASET:
       NUM_JOINTS_HALF_BODY: 8
       PROB_HALF_BODY: -1
   VAL:
-    TYPE: 'ICU'
-    ROOT: './data/ICU/'
-    IMG_PREFIX: 'val'
-    ANN: 'annotations/person_keypoints_val.json'
+    TYPE: 'Mscoco'
+    ROOT: './data/coco/'
+    IMG_PREFIX: 'val2017'
+    ANN: 'annotations/person_keypoints_val2017.json'
   TEST:
-    TYPE: 'ICU'
-    ROOT: './data/ICU/'
-    IMG_PREFIX: 'test'
-    DET_FILE: 'annotations/person_keypoints_test.json'
-    ANN: 'annotations/person_keypoints_test.json'
+    TYPE: 'Mscoco_det'
+    ROOT: './data/coco/'
+    IMG_PREFIX: 'val2017'
+    DET_FILE: './exp/json/test_det_yolo.json'
+    ANN: 'annotations/person_keypoints_val2017.json'
 DATA_PRESET:
   TYPE: 'simple'
   SIGMA: 2
-  NUM_JOINTS: 9
+  NUM_JOINTS: 17
   IMAGE_SIZE:
   - 256
   - 192

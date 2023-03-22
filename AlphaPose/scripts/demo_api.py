@@ -187,7 +187,6 @@ class DetectionLoader():
     def read(self):
         return self.pose
 
-
 class DataWriter():
     def __init__(self, cfg, opt):
         self.cfg = cfg

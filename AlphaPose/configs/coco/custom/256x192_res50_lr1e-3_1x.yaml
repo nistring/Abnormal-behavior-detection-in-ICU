@@ -1,0 +1,66 @@
+DATASET:
+  TRAIN:
+    TYPE: 'ICU'
+    ROOT: './data/coco/'
+    IMG_PREFIX: 'train'
+    ANN: 'annotations/person_keypoints_train.json'
+    AUG:
+      FLIP: true
+      ROT_FACTOR: 40
+      SCALE_FACTOR: 0.3
+      NUM_JOINTS_HALF_BODY: 8
+      PROB_HALF_BODY: -1
+      PROB_HSV: 0.0
+  VAL:
+    TYPE: 'ICU'
+    ROOT: './data/coco/'
+    IMG_PREFIX: 'val'
+    ANN: 'annotations/person_keypoints_val.json'
+  TEST:
+    TYPE: 'ICU'
+    ROOT: './data/coco/'
+    IMG_PREFIX: 'test'
+    DET_FILE: 'annotations/person_keypoints_test.json'
+    ANN: 'annotations/person_keypoints_test.json'
+DATA_PRESET:
+  TYPE: 'simple'
+  SIGMA: 2
+  NUM_JOINTS: 9
+  IMAGE_SIZE:
+  - 256
+  - 192
+  HEATMAP_SIZE:
+  - 64
+  - 48
+MODEL:
+  TYPE: 'FastPose'
+  PRETRAINED: ''
+  TRY_LOAD: 'pretrained_models/fast_res50_256x192.pth'
+  NUM_DECONV_FILTERS:
+  - 256
+  - 256
+  - 256
+  NUM_LAYERS: 50
+LOSS:
+  TYPE: 'MSELoss'
+DETECTOR:
+  NAME: 'yolox-l-icu'
+  # CONFIG: 'detector/YOLOX/yolox-cfg.cfg'
+  # WEIGHTS: 'detector/YOLOX/data/yolox-l'
+  # NMS_THRES: 0.0
+  # CONFIDENCE: 0.1
+TRAIN:
+  WORLD_SIZE: 1
+  BATCH_SIZE: 64
+  BEGIN_EPOCH: 0
+  END_EPOCH: 200
+  OPTIMIZER: 'adam'
+  LR: 0.001
+  LR_FACTOR: 0.1
+  LR_STEP:
+  - 90
+  - 120
+  DPG_MILESTONE: 140
+  DPG_STEP:
+  - 160
+  - 190

@@ -11,10 +11,13 @@ import torch.multiprocessing as mp
 from alphapose.utils.transforms import get_func_heatmap_to_coord
 from alphapose.utils.pPose_nms import pose_nms, write_json
 
+from action_recognition.action_recognition_api import ActionRecognition
+from action_recognition.action_recognition_cfg import cfg as acfg
+
 DEFAULT_VIDEO_SAVE_OPT = {
-    'savepath': 'examples/res/1.mp4',
+    'savepath': 'data/res/1.mp4',
     'fourcc': cv2.VideoWriter_fourcc(*'mp4v'),
-    'fps': 25,
+    'fps': 15,
     'frameSize': (640, 480)
 }
 
@@ -29,7 +32,7 @@ class DataWriter():
         self.opt = opt
         self.video_save_opt = video_save_opt
 
-        self.eval_joints = EVAL_JOINTS
+        self.eval_joints = list(range(cfg.DATA_PRESET.NUM_JOINTS)) # EVAL_JOINTS
         self.save_video = save_video
         self.heatmap_to_coord = get_func_heatmap_to_coord(cfg)
         # initialize the queue used to store frames read from
@@ -63,11 +66,15 @@ class DataWriter():
 
         self.use_heatmap_loss = (self.cfg.DATA_PRESET.get('LOSS_TYPE', 'MSELoss') == 'MSELoss')
 
+        if self.opt.action:
+            self.action_model = ActionRecognition(acfg, self.opt)
+
+
     def start_worker(self, target):
         if self.opt.sp:
             p = Thread(target=target, args=())
         else:
-            p = mp.Process(target=target, args=())
+            p =mp.Process(target=target, args=(self.action_model,))
         # p.daemon = True
         p.start()
         return p
@@ -77,7 +84,9 @@ class DataWriter():
         self.result_worker = self.start_worker(self.update)
         return self
 
-    def update(self):
+    def update(self, action_model):
+
+
         final_result = []
         norm_type = self.cfg.LOSS.get('NORM_TYPE', None)
         hm_size = self.cfg.DATA_PRESET.HEATMAP_SIZE
@@ -145,6 +154,9 @@ class DataWriter():
                     boxes, scores, ids, preds_img, preds_scores, pick_ids = \
                         pose_nms(boxes, scores, ids, preds_img, preds_scores, self.opt.min_box_area, use_heatmap_loss=self.use_heatmap_loss)
 
+                if self.opt.action:
+                    _, anomaly_score = action_model(preds_img, preds_scores)
+
                 _result = []
                 for k in range(len(scores)):
                     _result.append(
@@ -153,7 +165,8 @@ class DataWriter():
                             'kp_score':preds_scores[k],
                             'proposal_score': torch.mean(preds_scores[k]) + scores[k] + 1.25 * max(preds_scores[k]),
                             'idx':ids[k],
-                            'box':[boxes[k][0], boxes[k][1], boxes[k][2]-boxes[k][0],boxes[k][3]-boxes[k][1]] 
+                            'box':[boxes[k][0], boxes[k][1], boxes[k][2]-boxes[k][0],boxes[k][3]-boxes[k][1]],
+                            'anomaly_score' : anomaly_score if self.opt.action and anomaly_score else 0
                         }
                     )
 

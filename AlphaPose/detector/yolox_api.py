@@ -7,14 +7,14 @@
 import os
 import sys
 
-sys.path.insert(0, os.path.dirname(__file__))
+# sys.path.insert(0, os.path.dirname(__file__))
 
 import torch
 import numpy as np
 
-from yolox.yolox.exp import get_exp
-from yolox.utils import prep_image, prep_frame
-from yolox.yolox.utils import postprocess
+from .YOLOX.yolox.exp import get_exp
+from .YOLOX.utils import prep_image, prep_frame
+from .YOLOX.yolox.utils import postprocess_alphapose
 
 from detector.apis import BaseDetector
 
@@ -27,7 +27,7 @@ class YOLOXDetector(BaseDetector):
         self.detector_opt = opt
         self.model_name = cfg.get("MODEL_NAME", "yolox-x")
         self.model_weights = cfg.get("MODEL_WEIGHTS", "detector/yolox/data/yolox_x.pth")
-        self.exp = get_exp(exp_name=self.model_name)
+        self.exp = get_exp(exp_file=os.path.join('detector/YOLOX/exps/example/custom', self.model_name.replace("-", "_") + ".py"))
         self.num_classes = self.exp.num_classes
         self.conf_thres = cfg.get("CONF_THRES", 0.1)
         self.nms_thres = cfg.get("NMS_THRES", 0.6)
@@ -115,7 +115,7 @@ class YOLOXDetector(BaseDetector):
         self, prediction, num_classes, conf_thres, nms_thres, classes=0
     ):
         prediction_bak = prediction.clone()
-        dets = postprocess(
+        dets = postprocess_alphapose(
             prediction.clone(),
             num_classes=num_classes,
             conf_thre=conf_thres,
@@ -127,7 +127,7 @@ class YOLOXDetector(BaseDetector):
 
         if dets.shape[0] > 100:
             nms_thres -= 0.05
-            dets = postprocess(
+            dets = postprocess_alphapose(
                 prediction.clone(),
                 num_classes=num_classes,
                 conf_thre=conf_thres,
@@ -175,19 +175,19 @@ class YOLOXDetector(BaseDetector):
 
             img_dim_list = torch.index_select(img_dim_list, 0, dets[:, 0].long())
             scaling_factor = torch.min(self.inp_dim / img_dim_list, 1)[0].view(-1, 1)
-            dets[:, 1:5] /= scaling_factor
+            dets[:, :4] /= scaling_factor
             for i in range(dets.shape[0]):
-                dets[i, [1, 3]] = torch.clamp(dets[i, [1, 3]], 0.0, img_dim_list[i, 0])
-                dets[i, [2, 4]] = torch.clamp(dets[i, [2, 4]], 0.0, img_dim_list[i, 1])
+                dets[i, [0, 2]] = torch.clamp(dets[i, [0, 2]], 0.0, img_dim_list[i, 0])
+                dets[i, [1, 3]] = torch.clamp(dets[i, [1, 3]], 0.0, img_dim_list[i, 1])
 
                 # write results
                 det_dict = {}
-                x = float(dets[i, 1])
-                y = float(dets[i, 2])
-                w = float(dets[i, 3] - dets[i, 1])
-                h = float(dets[i, 4] - dets[i, 2])
+                x = float(dets[i, 0])
+                y = float(dets[i, 1])
+                w = float(dets[i, 2] - dets[i, 0])
+                h = float(dets[i, 3] - dets[i, 1])
                 det_dict["category_id"] = 1
-                det_dict["score"] = float(dets[i, 5])
+                det_dict["score"] = float(dets[i, 4])
                 det_dict["bbox"] = [x, y, w, h]
                 det_dict["image_id"] = int(os.path.basename(img_name).split(".")[0])
                 dets_results.append(det_dict)

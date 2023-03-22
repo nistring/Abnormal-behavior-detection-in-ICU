@@ -73,11 +73,13 @@ class CustomDataset(data.Dataset):
             self._rot = cfg['AUG']['ROT_FACTOR']
             self.num_joints_half_body = cfg['AUG']['NUM_JOINTS_HALF_BODY']
             self.prob_half_body = cfg['AUG']['PROB_HALF_BODY']
+            self.prob_hsv = cfg['AUG']['PROB_HSV'] if 'PROB_HSV' in cfg['AUG'].keys() else 0
         else:
             self._scale_factor = 0
             self._rot = 0
             self.num_joints_half_body = -1
             self.prob_half_body = -1
+            self.prob_hsv = 0
 
         self._input_size = self._preset_cfg['IMAGE_SIZE']
         self._output_size = self._preset_cfg['HEATMAP_SIZE']
@@ -100,7 +102,8 @@ class CustomDataset(data.Dataset):
                 output_size=self._output_size,
                 rot=self._rot, sigma=self._sigma,
                 train=self._train, add_dpg=self._dpg,
-                loss_type=self._loss_type)
+                loss_type=self._loss_type,
+                prob_hsv=self.prob_hsv)
         else:
             raise NotImplementedError
 
