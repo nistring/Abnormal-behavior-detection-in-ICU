@@ -10,6 +10,8 @@ import zmq
 import zmq.asyncio
 import os
 import signal
+import struct
+import time
 
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -64,7 +66,7 @@ def get_camera_data(pipeline, image_filters, align):
 
         color_mat = np.asanyarray(color.as_frame().get_data())
         depth_mat = np.asanyarray(depth.as_frame().get_data())
-        ts = frames.get_timestamp()
+        ts = time.time()
 
         return color_mat, depth_mat, ts
     else:
@@ -75,6 +77,7 @@ async def stream_data(pipeline, image_filters, align, zmq_socket):
     while True:
         color, depth, ts = get_camera_data(pipeline, image_filters, align)
 
+        ts = struct.pack('<d', ts)
         color_data = pickle.dumps(color)
         depth_data = pickle.dumps(depth)
 
@@ -127,7 +130,7 @@ class MulticastServerProtocol:
         ctx = zmq.asyncio.Context()
         zmq_socket = ctx.socket(zmq.PUB)
         zmq_socket.bind("tcp://*:%d" % port)
-        self.stream_task = asyncio.ensure_future(stream_data(self.pipeline, self.image_filters, self.align, zmq_socket, self.plugins))
+        self.stream_task = asyncio.ensure_future(stream_data(self.pipeline, self.image_filters, self.align, zmq_socket))
 
     def connection_made(self, transport):
         self.transport = transport

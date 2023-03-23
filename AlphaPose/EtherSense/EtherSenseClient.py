@@ -11,7 +11,7 @@ import argparse
 import zmq
 import zmq.asyncio
 import os
-from multiprocessing import Process, Queue
+from multiprocessing import Process, Queue, Pool, Barrier
 from datetime import datetime, date
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -20,6 +20,7 @@ parser = argparse.ArgumentParser(description="Ethersense client.")
 parser.add_argument("--gui", action="store_true")
 
 args = parser.parse_args()
+args.gui = True
 
 mc_ip_address = "224.0.0.1"
 save_root_addr = "/media/nistring/8d91e3e1-365a-4ecc-af00-b66fcdfe3e21"
@@ -99,48 +100,58 @@ def D2RGB(d):
 
     return rgb
 
-
-def start_video_writer(addr, queue):
-    p = Process(target=video_writer, args=(addr, queue))
-    p.start()
-    p.join()
-
+def release_video(rgb_out, depth_out):
+    rgb_out.release()
+    depth_out.release()
+        
 
 def video_writer(addr, queue):
 
-    hour = None
-    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-    today = date.today()
-    path = os.path.join(save_root_addr, addr)
-    if not os.path.exists(path):
-        os.makedirs(path)
-    rgb_out = cv2.VideoWriter(os.path.join(path, today.strftime("%d-%m-%Y-%H-%M-%S") + "_rgb.mp4"), fourcc, FPS, (width, height))
-    depth_out = cv2.VideoWriter(os.path.join(path, today.strftime("%d-%m-%Y-%H-%M-%S") + "_depth.mp4"), fourcc, FPS, (width, height))
+    p = None
 
-    # Save video every hours
     while True:
-        received_data = queue.get()
-        now = datetime.fromtimestamp(received_data["timestamp"])
-        rgb_out.write(received_data["color_array"])
-        depth_out.write(received_data["depth_array"])
-        if hour:
-            if hour != now.hour:
-                break
-        else:
-            hour = now.hour
+        hour = None
+        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
 
-    start_video_writer()
-    rgb_out.release()
-    depth_out.release()
+        path = os.path.join(save_root_addr, addr)
+        rgb_path = os.path.join(path, 'rgb')
+        depth_path = os.path.join(path, 'depth')
+        if not os.path.exists(path):
+            os.makedirs(path)
+
+        if not os.path.exists(rgb_path):
+            os.makedirs(rgb_path)
+        if not os.path.exists(depth_path):
+            os.makedirs(depth_path)
+
+        today = datetime.now()
+        rgb_out = cv2.VideoWriter(os.path.join(rgb_path, today.strftime("%d-%m-%Y-%H-%M-%S") + "_rgb.mp4"), fourcc, FPS, (width, height))
+        depth_out = cv2.VideoWriter(os.path.join(depth_path, today.strftime("%d-%m-%Y-%H-%M-%S") + "_depth.mp4"), fourcc, FPS, (width, height))
+
+        # Save video every hours
+        while True:
+            received_data = queue.get()
+            now = datetime.fromtimestamp(received_data["timestamp"])
+            rgb_out.write(received_data["color_array"])
+            depth_out.write(received_data["depth_array"])
+            if hour:
+                if hour != now.hour:
+                    break
+            else:
+                hour = now.hour
+
+        if p:
+            p.join()
+        p = Process(target=release_video, args=(rgb_out, depth_out))
+        p.start()
 
 
-async def receive_from_zmq(zmq_socket, plugins, queue, save_queue):
+async def receive_from_zmq(zmq_socket, queue, save_queue):
     received_data = {}
     while True:
         try:
             topic, data = await zmq_socket.recv_multipart()
-
-            if topic == b"TIME":
+            if topic == b"TS":
                 if "timestamp" not in received_data:
                     received_data["timestamp"] = struct.unpack("<d", data[0:8])[0]
                     continue
@@ -175,9 +186,11 @@ async def send_ping(transport, address):
 async def display_data(address, queue):
     while True:
         received_data = await queue.get()
-        color_array = received_data["color_array"]
+
+        array = np.concatenate((received_data['color_array'], received_data['depth_array']), axis=1)
+        
         if args.gui:
-            cv2.imshow(address, color_array)
+            cv2.imshow(address, array)
             key = cv2.waitKey(1)
             # if key == 27:
             #     break
@@ -213,13 +226,14 @@ class DiscoveryClientProtocol:
             zmq_socket.subscribe(b"TS")
             zmq_socket.subscribe(b"RGB")
             zmq_socket.subscribe(b"DEPTH")
-
+            
             queue = asyncio.Queue()
             save_queue = Queue()
             self.receive_task = asyncio.ensure_future(receive_from_zmq(zmq_socket, queue, save_queue))
             if args.gui:
                 self.display_task = asyncio.ensure_future(display_data(address, queue))
-            start_video_writer(address, save_queue)
+            p = Process(target=video_writer, args=(address, save_queue))
+            p.start()
 
     def error_received(self, exc):
         print("Error received:", exc)
