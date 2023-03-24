@@ -1,24 +1,18 @@
 #!/usr/bin/python
 import pyrealsense2 as rs
 import sys
-import argparse
 import asyncio
 import numpy as np
-import pickle
+from multiprocessing import Process, Queue
 import socket
 import zmq
 import zmq.asyncio
-import os
 import signal
 import struct
 import time
-
-
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-
-parser = argparse.ArgumentParser(description="Ethersense client.")
-
-args = parser.parse_args()
+import cv2
+import time
+import os
 
 mc_ip_address = "224.0.0.1"
 port = 1024
@@ -34,6 +28,7 @@ height = 480
 def create_pipeline():
     ctx = rs.context()
     devices = ctx.query_devices()
+    pipelines = []
 
     for device_id in range(devices.size()):
         device = devices[device_id]
@@ -50,7 +45,9 @@ def create_pipeline():
         cfg.enable_stream(rs.stream.color, width, height, rs.format.bgr8, FPS)
         pipe.start(cfg)
 
-    return pipe
+        pipelines.append(pipe)
+
+    return pipelines
 
 
 def get_camera_data(pipeline, image_filters, align):
@@ -68,18 +65,27 @@ def get_camera_data(pipeline, image_filters, align):
         depth_mat = np.asanyarray(depth.as_frame().get_data())
         ts = time.time()
 
-        return color_mat, depth_mat, ts
+        return ts, color_mat, depth_mat
     else:
-        return None, None
+        return None, None, None
 
-
-async def stream_data(pipeline, image_filters, align, zmq_socket):
+def encoder(in_queues, out_queues):
     while True:
-        color, depth, ts = get_camera_data(pipeline, image_filters, align)
+        for in_q, out_q in zip(in_queues, out_queues):
+            (ts, color, depth) = in_q.get()
 
-        ts = struct.pack('<d', ts)
-        color_data = pickle.dumps(color)
-        depth_data = pickle.dumps(depth)
+            ts = struct.pack('<d', ts)
+            color = cv2.imencode('.jpg', color)[1]
+            color = np.array(color).tobytes()
+            depth = cv2.imencode('.jpg', depth)[1]
+            depth = np.array(depth).tobytes()
+            out_q.put((ts, color, depth))
+
+
+async def stream_data(pipeline, image_filters, align, zmq_socket, in_queue, out_queue):
+    while True:
+        in_queue.put(get_camera_data(pipeline, image_filters, align))
+        ts, color_data, depth_data = out_queue.get()
 
         await zmq_socket.send_multipart([b"TS", ts])
         await zmq_socket.send_multipart([b"RGB", color_data])
@@ -93,10 +99,12 @@ class MulticastServerProtocol:
 
         print("Launching Realsense Camera Server")
         try:
-            self.pipeline = create_pipeline()
+            self.pipelines = create_pipeline()
         except:
             print("Unexpected error: ", sys.exc_info()[1])
             sys.exit(1)
+
+        self.num_cameras = len(self.pipelines)
 
         # Post processing filters
         self.spatial_filter = rs.spatial_filter()
@@ -115,10 +123,8 @@ class MulticastServerProtocol:
         self.color_filter.set_option(rs.option.color_scheme, 9)
 
         self.image_filters = [
-            self.spatial_filter,
-            self.temporal_filter,
-            self.depth_to_disparity,
-            self.disparity_to_depth,
+            #self.spatial_filter,
+            # self.temporal_filter,
             self.color_filter,
         ]
 
@@ -127,20 +133,36 @@ class MulticastServerProtocol:
         align_to = rs.stream.color
         self.align = rs.align(align_to)
 
+        self.stream_task = []
+        in_queues = []
+        out_queues = []
         ctx = zmq.asyncio.Context()
-        zmq_socket = ctx.socket(zmq.PUB)
-        zmq_socket.bind("tcp://*:%d" % port)
-        self.stream_task = asyncio.ensure_future(stream_data(self.pipeline, self.image_filters, self.align, zmq_socket))
+        for i, pipe in enumerate(self.pipelines):
+            zmq_socket = ctx.socket(zmq.PUB)
+            zmq_socket.bind("tcp://*:%d" % (port+i))
+            in_queue = Queue(FPS//2)
+            out_queue = Queue(FPS//2)
+            in_queues.append(in_queue)
+            out_queues.append(out_queue)
+            self.stream_task.append(asyncio.ensure_future(stream_data(pipe, self.image_filters, self.align, zmq_socket, in_queue, out_queue)))
+
+        self.p = Process(target=encoder, args=(in_queues, out_queues,))
+        self.p.start()
 
     def connection_made(self, transport):
         self.transport = transport
 
     def connection_lost(self, exc):
-        self.stream_task.cancel()
+        self.p.terminate()
+        self.p.close()
+        for task in self.stream_task:
+            task.cancel()
+        for pipe in self.pipelines:
+            pipe.stop()
 
     def datagram_received(self, data, addr):
-        self.transport.sendto(b"pong", addr)
-
+        self.transport.sendto(str(len(self.pipelines)).encode(), addr)
+            
 
 def main(argv):
     loop = asyncio.get_event_loop()

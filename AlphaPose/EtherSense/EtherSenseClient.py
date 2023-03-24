@@ -1,26 +1,28 @@
 #!/usr/bin/python
-import sys
 import signal
 import asyncio
 import numpy as np
-import pickle
 import socket
 import struct
 import cv2
-import argparse
 import zmq
 import zmq.asyncio
 import os
 from multiprocessing import Process, Queue, Pool, Barrier
 from datetime import datetime, date
+import time
+
+import sys
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
+import argparse
+
 parser = argparse.ArgumentParser(description="Ethersense client.")
 parser.add_argument("--gui", action="store_true")
-
 args = parser.parse_args()
 args.gui = True
+
 
 mc_ip_address = "224.0.0.1"
 save_root_addr = "/media/nistring/8d91e3e1-365a-4ecc-af00-b66fcdfe3e21"
@@ -31,6 +33,8 @@ width = 640
 height = 480
 max_distance = 3.0  # m
 min_distance = 0.3  # m
+
+stop_flag = {}
 
 
 def RGB2D(depth_map):
@@ -100,40 +104,48 @@ def D2RGB(d):
 
     return rgb
 
+
 def release_video(rgb_out, depth_out):
     rgb_out.release()
     depth_out.release()
-        
+
+
+def decode(data):
+    ts = struct.unpack("<d", data["TS"][0:8])[0]
+    rgb = cv2.imdecode(np.asarray(bytearray(data["RGB"])), cv2.IMREAD_COLOR)
+    depth = cv2.imdecode(np.asarray(bytearray(data["DEPTH"])), cv2.IMREAD_COLOR)
+    return (ts, rgb, depth)
+
 
 def video_writer(addr, queue):
 
     p = None
-
     while True:
-        hour = None
-        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-
         path = os.path.join(save_root_addr, addr)
-        rgb_path = os.path.join(path, 'rgb')
-        depth_path = os.path.join(path, 'depth')
+        rgb_path = os.path.join(path, "rgb")
+        depth_path = os.path.join(path, "depth")
         if not os.path.exists(path):
             os.makedirs(path)
-
         if not os.path.exists(rgb_path):
             os.makedirs(rgb_path)
         if not os.path.exists(depth_path):
             os.makedirs(depth_path)
 
+        hour = None
+        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
         today = datetime.now()
         rgb_out = cv2.VideoWriter(os.path.join(rgb_path, today.strftime("%d-%m-%Y-%H-%M-%S") + "_rgb.mp4"), fourcc, FPS, (width, height))
-        depth_out = cv2.VideoWriter(os.path.join(depth_path, today.strftime("%d-%m-%Y-%H-%M-%S") + "_depth.mp4"), fourcc, FPS, (width, height))
+        depth_out = cv2.VideoWriter(
+            os.path.join(depth_path, today.strftime("%d-%m-%Y-%H-%M-%S") + "_depth.mp4"), fourcc, FPS, (width, height)
+        )
 
         # Save video every hours
-        while True:
-            received_data = queue.get()
-            now = datetime.fromtimestamp(received_data["timestamp"])
-            rgb_out.write(received_data["color_array"])
-            depth_out.write(received_data["depth_array"])
+        while not stop_flag[addr]:
+            (ts, rgb, depth) = queue.get()
+
+            now = datetime.fromtimestamp(ts)
+            rgb_out.write(rgb)
+            depth_out.write(depth)
             if hour:
                 if hour != now.hour:
                     break
@@ -145,27 +157,64 @@ def video_writer(addr, queue):
         p = Process(target=release_video, args=(rgb_out, depth_out))
         p.start()
 
+        while stop_flag[addr]:
+            time.sleep(1000)
 
-async def receive_from_zmq(zmq_socket, queue, save_queue):
+
+async def display_data(address, queue):
+
+    fps = 0
+    idx = 0
+    last = 0
+    while True:
+        (ts, rgb, depth) = await queue.get()
+
+        array = np.concatenate((rgb, depth), axis=1)
+
+        if idx % FPS == 0:
+            cur = ts
+            if last:
+                fps = 1 / (cur - last) * FPS
+            last = cur
+
+        cv2.putText(array, f"FPS : {fps:4.1f}", (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2, cv2.LINE_AA)
+        cv2.imshow(address, array)
+        key = cv2.waitKey(1)
+        idx += 1
+        queue.task_done()
+
+
+async def send_data(dict_queues):
+    queues = []
+    for v in dict_queues.values():
+        queues.extend(v)
+
+    context = zmq.Context()
+    socket = context.socket(zmq.REP)
+    socket.bind("tcp://127.0.0.1:5555")
+    data = {}
+
+    while True:
+        for address, q in queues:
+            data[address] = await q.get()
+            q.task_done()
+        await socket.send(data)
+
+
+async def receive_from_zmq(zmq_socket, address, queue, async_queue):
     received_data = {}
     while True:
+        while stop_flag[address]:
+            await asyncio.sleep(1)
         try:
-            topic, data = await zmq_socket.recv_multipart()
-            if topic == b"TS":
-                if "timestamp" not in received_data:
-                    received_data["timestamp"] = struct.unpack("<d", data[0:8])[0]
-                    continue
-            if topic == b"RGB":
-                if "RGB" not in received_data:
-                    received_data["color_array"] = pickle.loads(data)
-                    continue
-            if topic == b"DEPTH":
-                if "DEPTH" not in received_data:
-                    received_data["depth_array"] = pickle.loads(data)
-                    continue
+            for i in range(3):
+                topic, data = await zmq_socket.recv_multipart()
+                topic = topic.decode()
+                received_data[topic] = data
 
-            queue.put_nowait(received_data)
-            save_queue.put_nowait(received_data)
+            decoded = decode(received_data)
+            queue.put(decoded)
+            await async_queue.put(decoded)
             received_data = {}
 
         except asyncio.CancelledError:
@@ -183,27 +232,22 @@ async def send_ping(transport, address):
             raise
 
 
-async def display_data(address, queue):
-    while True:
-        received_data = await queue.get()
-
-        array = np.concatenate((received_data['color_array'], received_data['depth_array']), axis=1)
-        
-        if args.gui:
-            cv2.imshow(address, array)
-            key = cv2.waitKey(1)
-            # if key == 27:
-            #     break
-        queue.task_done()
+def stop(*args):
+    on, address = args
+    stop_flag[address] = not on
 
 
-class DiscoveryClientProtocol:
+class DiscoveryClientProtocol():
     def __init__(self, loop):
         self.loop = loop
         self.transport = None
         self.ctx = None
-
-        self.display_task = None
+        self.addr_dict = {}
+        self.receive_task = {}
+        self.display_task = {}
+        self.processes = {}
+        self.queues = {}
+        self.async_queues = {}
 
     def connection_made(self, transport):
         self.transport = transport
@@ -217,23 +261,40 @@ class DiscoveryClientProtocol:
     def datagram_received(self, data, addr):
         # print("Received {!r} from {}".format(data, addr))
 
-        if self.ctx is None:
-            self.ctx = zmq.asyncio.Context()
-            zmq_socket = self.ctx.socket(zmq.SUB)
-            address = f"{addr[0]}:{addr[1]}"
-            zmq_socket.connect(f"tcp://{address}")
+        [addr, port] = addr
+        if addr not in self.addr_dict or self.addr_dict[addr] != data:
+            self.addr_dict[addr] = data
+            self.reset(addr)
+            for i in range(int(data.decode())):
+                address = f"{addr}:{int(port)+i}"
+                self.ctx = zmq.asyncio.Context()
+                zmq_socket = self.ctx.socket(zmq.SUB)
+                zmq_socket.connect(f"tcp://{address}")
+                zmq_socket.subscribe(b"TS")
+                zmq_socket.subscribe(b"RGB")
+                zmq_socket.subscribe(b"DEPTH")
+                queue = Queue(FPS // 2)
+                async_queue = asyncio.Queue(FPS // 2)
+                self.queues[addr].append(queue)
+                self.async_queues[addr].append((address, async_queue))
 
-            zmq_socket.subscribe(b"TS")
-            zmq_socket.subscribe(b"RGB")
-            zmq_socket.subscribe(b"DEPTH")
-            
-            queue = asyncio.Queue()
-            save_queue = Queue()
-            self.receive_task = asyncio.ensure_future(receive_from_zmq(zmq_socket, queue, save_queue))
-            if args.gui:
-                self.display_task = asyncio.ensure_future(display_data(address, queue))
-            p = Process(target=video_writer, args=(address, save_queue))
-            p.start()
+                stop_flag[address] = False
+                cv2.namedWindow(address)
+                cv2.createButton(address, stop, address, cv2.QT_CHECKBOX, 1)
+                self.receive_task[addr].append(asyncio.ensure_future(receive_from_zmq(zmq_socket, address, queue, async_queue)))
+                if args.gui:
+                    self.display_task[addr].append(
+                        asyncio.ensure_future(
+                            display_data(address, async_queue),
+                        )
+                    )
+
+                p = Process(target=video_writer, args=(address, queue))
+                p.start()
+                self.processes[addr].append(p)
+
+            if not args.gui:
+                self.send_task = asyncio.ensure_future(send_data, args=(self.async_queues,))
 
     def error_received(self, exc):
         print("Error received:", exc)
@@ -241,10 +302,40 @@ class DiscoveryClientProtocol:
     def connection_lost(self, exc):
         if self.ping_task:
             self.ping_task.cancel()
-        if self.receive_task:
-            self.receive_task.cancel()
-        if self.display_task:
-            self.display_task.cancel()
+        for tasks in self.receive_task.values():
+            for t in tasks:
+                t.cancel()
+        for tasks in self.display_task.values():
+            for t in tasks:
+                t.cancel()
+        for processes in self.processes.values():
+            for p in processes:
+                p.terminate()
+                p.close()
+        if self.send_task:
+            self.send_task.cancel()
+
+    def reset(self, addr):
+        try:
+            cv2.destroyAllWindows()
+            for task in self.receive_task[addr]:
+                task.cancel()
+            for task in self.display_task[addr]:
+                task.cancel()
+            for processes in self.processes[addr]:
+                processes.terminate()
+                processes.close()
+            del self.queues[addr]
+            del self.async_queues[addr]
+            self.send_task.cancel()
+        except:
+            pass
+        finally:
+            self.receive_task[addr] = []
+            self.display_task[addr] = []
+            self.processes[addr] = []
+            self.queues[addr] = []
+            self.async_queues[addr] = []
 
 
 def main():
