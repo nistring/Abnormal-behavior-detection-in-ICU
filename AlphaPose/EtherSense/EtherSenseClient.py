@@ -11,7 +11,7 @@ import os
 from multiprocessing import Process, Queue, Pool, Barrier
 from datetime import datetime, date
 import time
-
+import pickle
 import sys
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -196,9 +196,10 @@ async def send_data(dict_queues):
 
     while True:
         for address, q in queues:
-            data[address] = await q.get()
+            data[address] = await q.get()["DEPTH"]
             q.task_done()
-        await socket.send(data)
+        socket.recv()
+        socket.send(pickle.dumps(data))
 
 
 async def receive_from_zmq(zmq_socket, address, queue, async_queue):
@@ -279,10 +280,10 @@ class DiscoveryClientProtocol():
                 self.async_queues[addr].append((address, async_queue))
 
                 stop_flag[address] = False
-                cv2.namedWindow(address)
-                cv2.createButton(address, stop, address, cv2.QT_CHECKBOX, 1)
                 self.receive_task[addr].append(asyncio.ensure_future(receive_from_zmq(zmq_socket, address, queue, async_queue)))
                 if args.gui:
+                    cv2.namedWindow(address)
+                    cv2.createButton(address, stop, address, cv2.QT_CHECKBOX, 1)
                     self.display_task[addr].append(
                         asyncio.ensure_future(
                             display_data(address, async_queue),
@@ -294,7 +295,7 @@ class DiscoveryClientProtocol():
                 self.processes[addr].append(p)
 
             if not args.gui:
-                self.send_task = asyncio.ensure_future(send_data, args=(self.async_queues,))
+                self.send_task = asyncio.ensure_future(send_data(self.async_queues))
 
     def error_received(self, exc):
         print("Error received:", exc)
@@ -339,6 +340,7 @@ class DiscoveryClientProtocol():
 
 
 def main():
+    args.gui = False
     loop = asyncio.get_event_loop()
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     connect = loop.create_datagram_endpoint(lambda: DiscoveryClientProtocol(loop), sock=sock)
@@ -358,4 +360,5 @@ def main():
 
 
 if __name__ == "__main__":
+    args.gui = True
     main()
