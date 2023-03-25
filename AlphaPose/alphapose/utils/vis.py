@@ -63,7 +63,7 @@ def vis_frame_fast(frame, im_res, opt, vis_thres, format='coco'):
 
     return rendered image
     '''
-    kp_num = 17
+    kp_num = 9
     if len(im_res['result']) > 0:
         kp_num = len(im_res['result'][0]['keypoints'])
     if kp_num == 17:
@@ -243,7 +243,6 @@ def vis_frame_fast(frame, im_res, opt, vis_thres, format='coco'):
             g = min(255, round(510 * (1-anomaly_score)))
             r = min(255, round(510 * anomaly_score))
             color = (0, g, r)
-
         # Draw bboxes
         if opt.showbox:
             if 'box' in human.keys():

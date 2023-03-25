@@ -8,21 +8,15 @@ import cv2
 import zmq
 import zmq.asyncio
 import os
-from multiprocessing import Process, Queue, Pool, Barrier
-from datetime import datetime, date
+from multiprocessing import Process, Queue
+from datetime import datetime
 import time
 import pickle
 import sys
+import json
+import pickle
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-
-import argparse
-
-parser = argparse.ArgumentParser(description="Ethersense client.")
-parser.add_argument("--gui", action="store_true")
-args = parser.parse_args()
-args.gui = True
-
 
 mc_ip_address = "224.0.0.1"
 save_root_addr = "/media/nistring/8d91e3e1-365a-4ecc-af00-b66fcdfe3e21"
@@ -184,22 +178,17 @@ async def display_data(address, queue):
         queue.task_done()
 
 
-async def send_data(dict_queues):
+async def send_data(dict_queues, ipc_queue):
     queues = []
     for v in dict_queues.values():
         queues.extend(v)
-
-    context = zmq.Context()
-    socket = context.socket(zmq.REP)
-    socket.bind("tcp://127.0.0.1:5555")
-    data = {}
-
     while True:
+        data = []
         for address, q in queues:
-            data[address] = await q.get()["DEPTH"]
+            (ts, rgb, depth) = await q.get()
+            data.append((address, depth))
             q.task_done()
-        socket.recv()
-        socket.send(pickle.dumps(data))
+        ipc_queue.put(data)
 
 
 async def receive_from_zmq(zmq_socket, address, queue, async_queue):
@@ -214,7 +203,8 @@ async def receive_from_zmq(zmq_socket, address, queue, async_queue):
                 received_data[topic] = data
 
             decoded = decode(received_data)
-            queue.put(decoded)
+            if queue:
+                queue.put(decoded)
             await async_queue.put(decoded)
             received_data = {}
 
@@ -239,7 +229,7 @@ def stop(*args):
 
 
 class DiscoveryClientProtocol():
-    def __init__(self, loop):
+    def __init__(self, loop, ipc_queue=None):
         self.loop = loop
         self.transport = None
         self.ctx = None
@@ -249,6 +239,7 @@ class DiscoveryClientProtocol():
         self.processes = {}
         self.queues = {}
         self.async_queues = {}
+        self.ipc_queue = ipc_queue
 
     def connection_made(self, transport):
         self.transport = transport
@@ -274,14 +265,14 @@ class DiscoveryClientProtocol():
                 zmq_socket.subscribe(b"TS")
                 zmq_socket.subscribe(b"RGB")
                 zmq_socket.subscribe(b"DEPTH")
-                queue = Queue(FPS // 2)
+                queue = None if self.ipc_queue else Queue(FPS // 2)
                 async_queue = asyncio.Queue(FPS // 2)
                 self.queues[addr].append(queue)
                 self.async_queues[addr].append((address, async_queue))
 
                 stop_flag[address] = False
                 self.receive_task[addr].append(asyncio.ensure_future(receive_from_zmq(zmq_socket, address, queue, async_queue)))
-                if args.gui:
+                if not self.ipc_queue:
                     cv2.namedWindow(address)
                     cv2.createButton(address, stop, address, cv2.QT_CHECKBOX, 1)
                     self.display_task[addr].append(
@@ -290,12 +281,12 @@ class DiscoveryClientProtocol():
                         )
                     )
 
-                p = Process(target=video_writer, args=(address, queue))
-                p.start()
-                self.processes[addr].append(p)
+                    p = Process(target=video_writer, args=(address, queue))
+                    p.start()
+                    self.processes[addr].append(p)
 
-            if not args.gui:
-                self.send_task = asyncio.ensure_future(send_data(self.async_queues))
+            if self.ipc_queue:
+                self.send_task = asyncio.ensure_future(send_data(self.async_queues, self.ipc_queue))
 
     def error_received(self, exc):
         print("Error received:", exc)
@@ -339,11 +330,10 @@ class DiscoveryClientProtocol():
             self.async_queues[addr] = []
 
 
-def main():
-    args.gui = False
+def main(ipc_queue=None):
     loop = asyncio.get_event_loop()
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    connect = loop.create_datagram_endpoint(lambda: DiscoveryClientProtocol(loop), sock=sock)
+    connect = loop.create_datagram_endpoint(lambda: DiscoveryClientProtocol(loop, ipc_queue), sock=sock)
     transport, protocol = loop.run_until_complete(connect)
 
     def signal_handler():
@@ -359,6 +349,12 @@ def main():
         loop.close()
 
 
+def launch_ethersense():
+    ipc_queue = Queue()
+    stream = Process(target=main, args=(ipc_queue,))
+    stream.start()
+    input_source = [data[0] for data in ipc_queue.get()]
+    return ipc_queue, stream, input_source
+
 if __name__ == "__main__":
-    args.gui = True
     main()

@@ -18,13 +18,20 @@ from pyskl.datasets.pipelines import Compose
 
 from collections import deque
 import numpy as np
+from multiprocessing import Queue, Process
 
 class ActionRecognition():
-    def __init__(self, acfg, args):
+    def __init__(self, acfg, opt, batch_size=1):
         self.acfg = acfg
-        self.args = args
+        self.opt = opt
+        self.idx = 0
+        self.ret = (None, None)
+        self.in_queue = Queue(1)
+        self.out_queue = Queue(1)
+        self.batch_size = batch_size
         
         self.model = self.init_recognizer()
+        Process(target=self.action_model, args=()).start()
 
     def init_recognizer(self):
         cfg = Config.fromfile(self.acfg.config)
@@ -33,7 +40,9 @@ class ActionRecognition():
         self.pipeline[0]['num_clips'] = 1
         self.pipeline[-2]['keys'] = ['imgs']
         self.clip_len = self.pipeline[0]['clip_len']
-        self.queue = deque([], maxlen=self.clip_len)
+        self.queue = []
+        for i in range(self.batch_size):
+            self.queue.append(deque([], maxlen=self.clip_len))
         self.pipeline = Compose(self.pipeline)
 
         # set cudnn benchmark
@@ -73,33 +82,47 @@ class ActionRecognition():
         if self.acfg.fuse_conv_bn:
             model = fuse_conv_bn(model)
 
-        if len(self.args.gpus) > 1:
-            model = torch.nn.DataParallel(model, device_ids=self.args.gpus).to(self.args.device)
+        if len(self.opt.gpus) > 1:
+            model = torch.nn.DataParallel(model, device_ids=self.opt.gpus).to(self.opt.device)
         else:
-            model.to(self.args.device)
+            model.to(self.opt.device)
         model.eval()
 
         return model
 
-    def __call__(self, preds_img, preds_score):
-        if preds_img and preds_score:
-            input = torch.cat((preds_img[0], preds_score[0]), dim=1).numpy()
-            self.queue.append(input)
-        if len(self.queue) == self.clip_len:
-            # forward the model
-            kp = np.array(self.queue)
+    def action_model(self):
+        kps = self.in_queue.get()
+        inps = []
+        for i in range(kps.shape[0]):
             results = {
                 'total_frames' : self.clip_len,
                 'img_shape' : (480,640),
                 'original_shape' : (480,640),
-                'keypoint' : kp[np.newaxis,:,:,:-1],
-                'keypoint_score' : kp[np.newaxis,:,:,-1],
+                'keypoint' : kps[i:i+1,:,:,:-1],
+                'keypoint_score' : kps[i:i+1,:,:,-1],
             }
-            results = self.pipeline(results)
-            results = torch.unsqueeze(results['imgs'], 0).to(self.args.device)
-            with torch.no_grad():
-                scores = self.model(results, return_loss=False)[0]
-            top_1 = np.argmax(scores)
-            return (int(top_1), scores[1])
+            inps.append(self.pipeline(results)['imgs'])
+        inps = torch.stack(inps).to(self.opt.device)
+        with torch.no_grad():
+            scores = self.model(inps, return_loss=False)
+        top_1 = np.argmax(scores, axis=1)
+        self.out_queue.put((top_1, scores[:, 1]))
 
-        return (None, None)
+    def __call__(self, rets):
+        for i, ret in enumerate(rets):
+            if ret:
+                boxes, scores, ids, preds_img, preds_scores, pick_ids = ret
+                if len(boxes) == 1:
+                    self.queue[i].append(torch.cat((preds_img[0], preds_scores[0]), dim=1).numpy())
+
+        for q in self.queue:
+            if len(q) != self.clip_len:
+                return self.ret
+        
+        if self.in_queue.empty():
+            self.in_queue.put(np.stack([np.array(q) for q in self.queue]))
+            
+        if not self.out_queue.empty():
+            self.ret = self.out_queue.get()
+        
+        return self.ret

@@ -69,6 +69,7 @@ class DataWriter():
         if self.opt.action:
             self.action_model = ActionRecognition(acfg, self.opt)
 
+        
 
     def start_worker(self, target):
         if self.opt.sp:
@@ -155,7 +156,9 @@ class DataWriter():
                         pose_nms(boxes, scores, ids, preds_img, preds_scores, self.opt.min_box_area, use_heatmap_loss=self.use_heatmap_loss)
 
                 if self.opt.action:
-                    _, anomaly_score = action_model(preds_img, preds_scores)
+                    _, anomaly_score = action_model([[boxes, scores, ids, preds_img, preds_scores, pick_ids]])
+                    if anomaly_score:
+                        anomaly_score = anomaly_score[0]
 
                 _result = []
                 for k in range(len(scores)):
