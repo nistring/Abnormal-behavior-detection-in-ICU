@@ -11,10 +11,8 @@ import os
 from multiprocessing import Process, Queue
 from datetime import datetime
 import time
-import pickle
 import sys
-import json
-import pickle
+import psutil
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
@@ -99,9 +97,10 @@ def D2RGB(d):
     return rgb
 
 
-def release_video(rgb_out, depth_out):
+def release_video(rgb_out, depth_out, today):
     rgb_out.release()
     depth_out.release()
+    print(today, f" : {psutil.disk_usage(save_root_addr).free / 1024 / 1024 / 1024:.1f} Gb left")
 
 
 def decode(data):
@@ -127,12 +126,12 @@ def video_writer(addr, queue):
 
         hour = None
         fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-        today = datetime.now()
-        rgb_out = cv2.VideoWriter(os.path.join(rgb_path, today.strftime("%d-%m-%Y-%H-%M-%S") + "_rgb.mp4"), fourcc, FPS, (width, height))
+        today = datetime.now().strftime("%d-%m-%Y-%H-%M-%S") 
+        rgb_out = cv2.VideoWriter(os.path.join(rgb_path, today + "_rgb.mp4"), fourcc, FPS, (width, height))
         depth_out = cv2.VideoWriter(
-            os.path.join(depth_path, today.strftime("%d-%m-%Y-%H-%M-%S") + "_depth.mp4"), fourcc, FPS, (width, height)
+            os.path.join(depth_path, today + "_depth.mp4"), fourcc, FPS, (width, height)
         )
-
+        
         # Save video every hours
         while not stop_flag[addr]:
             (ts, rgb, depth) = queue.get()
@@ -148,7 +147,7 @@ def video_writer(addr, queue):
 
         if p:
             p.join()
-        p = Process(target=release_video, args=(rgb_out, depth_out))
+        p = Process(target=release_video, args=(rgb_out, depth_out, today))
         p.start()
 
         while stop_flag[addr]:
@@ -194,13 +193,13 @@ async def send_data(dict_queues, ipc_queue):
 async def receive_from_zmq(zmq_socket, address, queue, async_queue):
     received_data = {}
     while True:
-        while stop_flag[address]:
-            await asyncio.sleep(1)
         try:
             for i in range(3):
                 topic, data = await zmq_socket.recv_multipart()
                 topic = topic.decode()
                 received_data[topic] = data
+            if stop_flag[address]:
+                continue
 
             decoded = decode(received_data)
             if queue:

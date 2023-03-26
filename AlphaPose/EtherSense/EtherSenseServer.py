@@ -69,7 +69,7 @@ def get_camera_data(pipeline, image_filters, align):
     else:
         return None, None, None
 
-def encoder(in_queues, out_queues):
+def encoder(in_queues, out_queues, loop):
     while True:
         for in_q, out_q in zip(in_queues, out_queues):
             (ts, color, depth) = in_q.get()
@@ -146,7 +146,7 @@ class MulticastServerProtocol:
             out_queues.append(out_queue)
             self.stream_task.append(asyncio.ensure_future(stream_data(pipe, self.image_filters, self.align, zmq_socket, in_queue, out_queue)))
 
-        self.p = Process(target=encoder, args=(in_queues, out_queues,))
+        self.p = Process(target=encoder, args=(in_queues, out_queues, loop))
         self.p.start()
 
     def connection_made(self, transport):
@@ -162,6 +162,8 @@ class MulticastServerProtocol:
 
     def datagram_received(self, data, addr):
         self.transport.sendto(str(len(self.pipelines)).encode(), addr)
+
+
             
 
 def main(argv):
@@ -173,21 +175,37 @@ def main(argv):
     server_address = ("", port)
     sock.bind(server_address)
 
+    num_cameras = rs.context().query_devices().size()
+
     connect = loop.create_datagram_endpoint(lambda: MulticastServerProtocol(loop), sock=sock)
 
     transport, protocol = loop.run_until_complete(connect)
+    # async def shutdown_handler():
+    #     print(1)
+    #     loop.stop()
 
-    def shutdown_handler():
-        loop.stop()
+    # loop.add_signal_handler(signal.SIGINT, lambda:asyncio.create_task(shutdown_handler()))
+    # async def shutdown():
+    #     while True:
+    #         n = rs.context().query_devices().size()
+    #         if num_cameras != n:
+    #             return
+    #         await asyncio.sleep(0)
 
-    loop.add_signal_handler(signal.SIGINT, shutdown_handler)
+    # loop.run_until_complete(shutdown())
+    loop.run_forever()
+    # transport.close()
+    # loop.run_until_complete(loop.shutdown_asyncgens())
+    # loop.stop()
+    loop.close()
 
-    try:
-        loop.run_forever()
-    finally:
-        transport.close()
-        loop.run_until_complete(loop.shutdown_asyncgens())
-        loop.close()
+    # try:
+    #     loop.run_forever()
+        
+    # finally:
+    #     transport.close()
+    #     loop.run_until_complete(loop.shutdown_asyncgens())
+    #     loop.close()
 
 
 if __name__ == "__main__":
