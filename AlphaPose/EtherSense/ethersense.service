@@ -8,7 +8,7 @@ WorkingDirectory=/home/realsense/Desktop/EtherSense
 User=realsense
 Restart=always
 RestartSec=5
-ExecStart=/usr/bin/python3 /home/realsense/EtherSense/EtherSenseServer.py
+ExecStart=/usr/bin/python3 /home/realsense/Desktop/EtherSense/EtherSenseServer.py
 
 [Install]
 WantedBy=multi-user.target
