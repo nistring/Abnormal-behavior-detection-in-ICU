@@ -4,11 +4,11 @@ After=multi-user.target
 
 [Service]
 Type=idle
-WorkingDirectory=/home/martin/devel/EtherSense
-User=martin
+WorkingDirectory=/home/realsense/Desktop/EtherSense
+User=realsense
 Restart=always
 RestartSec=5
-ExecStart=/home/martin/venvs/magicqueen/bin/python3 -u /home/martin/devel/EtherSense/EtherSenseServer.py
+ExecStart=/usr/bin/python3 /home/realsense/EtherSense/EtherSenseServer.py
 
 [Install]
 WantedBy=multi-user.target
