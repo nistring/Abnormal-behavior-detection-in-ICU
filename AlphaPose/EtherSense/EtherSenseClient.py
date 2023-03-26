@@ -102,7 +102,6 @@ def release_video(rgb_out, depth_out, today):
     depth_out.release()
     print(today, f" : {psutil.disk_usage(save_root_addr).free / 1024 / 1024 / 1024:.1f} Gb left")
 
-
 def decode(data):
     ts = struct.unpack("<d", data["TS"][0:8])[0]
     rgb = cv2.imdecode(np.asarray(bytearray(data["RGB"])), cv2.IMREAD_COLOR)
@@ -126,32 +125,30 @@ def video_writer(addr, queue):
 
         hour = None
         fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-        today = datetime.now().strftime("%d-%m-%Y-%H-%M-%S") 
+        today = datetime.now().strftime("%d-%m-%Y-%H-%M-%S")
         rgb_out = cv2.VideoWriter(os.path.join(rgb_path, today + "_rgb.mp4"), fourcc, FPS, (width, height))
-        depth_out = cv2.VideoWriter(
-            os.path.join(depth_path, today + "_depth.mp4"), fourcc, FPS, (width, height)
-        )
-        
+        depth_out = cv2.VideoWriter(os.path.join(depth_path, today + "_depth.mp4"), fourcc, FPS, (width, height))
+
         # Save video every hours
-        while not stop_flag[addr]:
+        while True:
             (ts, rgb, depth) = queue.get()
+            if ts is None:
+                continue
 
             now = datetime.fromtimestamp(ts)
-            rgb_out.write(rgb)
-            depth_out.write(depth)
             if hour:
                 if hour != now.hour:
                     break
             else:
                 hour = now.hour
+            rgb_out.write(rgb)
+            depth_out.write(depth)
 
         if p:
             p.join()
+            
         p = Process(target=release_video, args=(rgb_out, depth_out, today))
         p.start()
-
-        while stop_flag[addr]:
-            time.sleep(1000)
 
 
 async def display_data(address, queue):
@@ -159,6 +156,7 @@ async def display_data(address, queue):
     fps = 0
     idx = 0
     last = 0
+    rec = False
     while True:
         (ts, rgb, depth) = await queue.get()
 
@@ -169,10 +167,16 @@ async def display_data(address, queue):
             if last:
                 fps = 1 / (cur - last) * FPS
             last = cur
+            if stop_flag[address]:
+                rec = False
+            else:
+                rec = not rec
 
-        cv2.putText(array, f"FPS : {fps:4.1f}", (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2, cv2.LINE_AA)
+        if rec:
+            cv2.putText(array, f"REC", (600, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1, cv2.LINE_AA)
+        cv2.putText(array, f"FPS : {fps:4.1f}", (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1, cv2.LINE_AA)
         cv2.imshow(address, array)
-        key = cv2.waitKey(1)
+        cv2.waitKey(1)
         idx += 1
         queue.task_done()
 
@@ -192,18 +196,22 @@ async def send_data(dict_queues, ipc_queue):
 
 async def receive_from_zmq(zmq_socket, address, queue, async_queue):
     received_data = {}
+    decoded = None
     while True:
         try:
             for i in range(3):
                 topic, data = await zmq_socket.recv_multipart()
                 topic = topic.decode()
                 received_data[topic] = data
-            if stop_flag[address]:
-                continue
+
+            
 
             decoded = decode(received_data)
             if queue:
-                queue.put(decoded)
+                if stop_flag[address]:
+                    queue.put((None, None, None))
+                else:
+                    queue.put(decoded)
             await async_queue.put(decoded)
             received_data = {}
 
@@ -227,7 +235,13 @@ def stop(*args):
     stop_flag[address] = not on
 
 
-class DiscoveryClientProtocol():
+def create_button():
+    for address in stop_flag.keys():
+        cv2.namedWindow(address)
+        cv2.createButton(address, stop, address, cv2.QT_CHECKBOX, 1)
+
+
+class DiscoveryClientProtocol:
     def __init__(self, loop, ipc_queue=None):
         self.loop = loop
         self.transport = None
@@ -252,12 +266,12 @@ class DiscoveryClientProtocol():
     def datagram_received(self, data, addr):
         # print("Received {!r} from {}".format(data, addr))
 
-        [addr, port] = addr
+        [addr, local_port] = addr
         if addr not in self.addr_dict or self.addr_dict[addr] != data:
             self.addr_dict[addr] = data
             self.reset(addr)
             for i in range(int(data.decode())):
-                address = f"{addr}:{int(port)+i}"
+                address = f"{addr}:{int(local_port)+i}"
                 self.ctx = zmq.asyncio.Context()
                 zmq_socket = self.ctx.socket(zmq.SUB)
                 zmq_socket.connect(f"tcp://{address}")
@@ -272,8 +286,7 @@ class DiscoveryClientProtocol():
                 stop_flag[address] = False
                 self.receive_task[addr].append(asyncio.ensure_future(receive_from_zmq(zmq_socket, address, queue, async_queue)))
                 if not self.ipc_queue:
-                    cv2.namedWindow(address)
-                    cv2.createButton(address, stop, address, cv2.QT_CHECKBOX, 1)
+                    create_button()
                     self.display_task[addr].append(
                         asyncio.ensure_future(
                             display_data(address, async_queue),
@@ -354,6 +367,7 @@ def launch_ethersense():
     stream.start()
     input_source = [data[0] for data in ipc_queue.get()]
     return ipc_queue, stream, input_source
+
 
 if __name__ == "__main__":
     main()
